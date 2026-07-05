@@ -1,0 +1,245 @@
+import 'dart:convert';
+import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
+class SettingsService extends ChangeNotifier {
+  static const _kToken = 'dtf_token';
+  static const _kShowDeleted = 'show_deleted_comments';
+  static const _kAutoCollapse = 'auto_collapse_viewed';
+  static const _kFilterKeywords = 'filter_keywords';
+  static const _kUserNotes = 'user_notes';
+  static const _kViewedPosts = 'viewed_posts';
+  static const _kBatchSize = 'batch_size';
+  static const _kAutoExpandComments = 'auto_expand_comments';
+  static const _kRecentGifs = 'recent_gifs';
+  static const _kAccentColor = 'accent_color';
+  static const _kBgImagePath = 'bg_image_path';
+  static const _kBgBlur = 'bg_blur';
+  static const _kBgDim = 'bg_dim';
+  static const _kBlackTheme = 'black_theme';
+  static const _kReactionUsage = 'reaction_usage';
+
+  static const _defaultAccent = 0xFF4FC3F7; // DTF blue
+
+  bool showDeletedComments = true;
+  bool autoCollapseViewed = false;
+  bool autoExpandComments = true;
+  bool blackTheme = false;
+  List<String> filterKeywords = [];
+  Map<int, String> userNotes = {};
+  Set<int> viewedPostIds = {};
+  // How many times each reaction id has been used, for "most used first"
+  // ordering in the reaction picker.
+  Map<int, int> reactionUsage = {};
+  int batchSize = 20;
+  // Recently used GIFs (each is a stored GiphyGif json map), newest first, max 100.
+  List<Map<String, dynamic>> recentGifs = [];
+  int _accentColor = _defaultAccent;
+  String? _bgImagePath;
+  double _bgBlur = 10.0;
+  double _bgDim = 0.45;
+  String? _token;
+
+  String? get bgImagePath => _bgImagePath;
+  double get bgBlur => _bgBlur;
+  double get bgDim => _bgDim;
+
+  Color get accentColor => Color(_accentColor);
+
+  String? get token => _token;
+  bool get isLoggedIn => _token != null && _token!.isNotEmpty;
+
+  // Unread-notification count for the bell badge. Polled from main.dart (kept
+  // here so any widget can react via Provider without a separate service).
+  int _notificationCount = 0;
+  int get notificationCount => _notificationCount;
+  void setNotificationCount(int n) {
+    if (n == _notificationCount) return;
+    _notificationCount = n;
+    notifyListeners();
+  }
+
+  static Future<SettingsService> load() async {
+    final svc = SettingsService();
+    await svc._init();
+    return svc;
+  }
+
+  Future<void> _init() async {
+    final prefs = await SharedPreferences.getInstance();
+    _token = prefs.getString(_kToken);
+    showDeletedComments = prefs.getBool(_kShowDeleted) ?? true;
+    autoCollapseViewed = prefs.getBool(_kAutoCollapse) ?? false;
+    autoExpandComments = prefs.getBool(_kAutoExpandComments) ?? true;
+    batchSize = prefs.getInt(_kBatchSize) ?? 20;
+
+    final kwJson = prefs.getString(_kFilterKeywords);
+    if (kwJson != null) filterKeywords = List<String>.from(jsonDecode(kwJson));
+
+    final notesJson = prefs.getString(_kUserNotes);
+    if (notesJson != null) {
+      final raw = jsonDecode(notesJson) as Map;
+      userNotes = raw.map((k, v) => MapEntry(int.parse(k.toString()), v.toString()));
+    }
+
+    final viewedJson = prefs.getString(_kViewedPosts);
+    if (viewedJson != null) {
+      viewedPostIds = Set<int>.from((jsonDecode(viewedJson) as List).map((e) => int.parse(e.toString())));
+    }
+
+    final gifsJson = prefs.getString(_kRecentGifs);
+    if (gifsJson != null) {
+      recentGifs = (jsonDecode(gifsJson) as List).map((e) => Map<String, dynamic>.from(e)).toList();
+    }
+
+    final usageJson = prefs.getString(_kReactionUsage);
+    if (usageJson != null) {
+      final raw = jsonDecode(usageJson) as Map;
+      reactionUsage = raw.map(
+          (k, v) => MapEntry(int.parse(k.toString()), (v as num).toInt()));
+    }
+
+    _accentColor = prefs.getInt(_kAccentColor) ?? _defaultAccent;
+    _bgImagePath = prefs.getString(_kBgImagePath);
+    _bgBlur = prefs.getDouble(_kBgBlur) ?? 10.0;
+    _bgDim = prefs.getDouble(_kBgDim) ?? 0.45;
+    blackTheme = prefs.getBool(_kBlackTheme) ?? false;
+  }
+
+  Future<void> setBlackTheme(bool v) async {
+    blackTheme = v;
+    await _prefs((p) => p.setBool(_kBlackTheme, v));
+  }
+
+  /// Records that [reactionId] was used, so the picker can surface the user's
+  /// favourites first. Fire-and-forget — no notifyListeners (nothing visible
+  /// needs to rebuild immediately; the picker re-reads on next open).
+  Future<void> recordReactionUse(int reactionId) async {
+    reactionUsage[reactionId] = (reactionUsage[reactionId] ?? 0) + 1;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(
+        _kReactionUsage,
+        jsonEncode(
+            reactionUsage.map((k, v) => MapEntry(k.toString(), v))));
+  }
+
+  Future<void> setAccentColor(Color c) async {
+    _accentColor = c.toARGB32();
+    await _prefs((p) => p.setInt(_kAccentColor, _accentColor));
+  }
+
+  Future<void> resetAccentColor() async {
+    _accentColor = _defaultAccent;
+    await _prefs((p) => p.setInt(_kAccentColor, _accentColor));
+  }
+
+  Future<void> setBgImagePath(String? path) async {
+    _bgImagePath = path;
+    final prefs = await SharedPreferences.getInstance();
+    if (path == null) {
+      await prefs.remove(_kBgImagePath);
+    } else {
+      await prefs.setString(_kBgImagePath, path);
+    }
+    notifyListeners();
+  }
+
+  Future<void> setBgBlur(double v) async {
+    _bgBlur = v;
+    await _prefs((p) => p.setDouble(_kBgBlur, v));
+  }
+
+  Future<void> setBgDim(double v) async {
+    _bgDim = v;
+    await _prefs((p) => p.setDouble(_kBgDim, v));
+  }
+
+  Future<void> addRecentGif(Map<String, dynamic> gif) async {
+    final id = gif['id'];
+    // Move to front, dedupe, cap at 100.
+    recentGifs = [gif, ...recentGifs.where((g) => g['id'] != id)];
+    if (recentGifs.length > 100) recentGifs = recentGifs.sublist(0, 100);
+    await _prefs((p) => p.setString(_kRecentGifs, jsonEncode(recentGifs)));
+  }
+
+  Future<void> _prefs(Future<void> Function(SharedPreferences) fn) async {
+    final prefs = await SharedPreferences.getInstance();
+    await fn(prefs);
+    notifyListeners();
+  }
+
+  Future<void> saveToken(String token) async {
+    _token = token;
+    await _prefs((p) => p.setString(_kToken, token));
+  }
+
+  Future<void> clearToken() async {
+    _token = null;
+    await _prefs((p) => p.remove(_kToken));
+  }
+
+  Future<void> setShowDeletedComments(bool v) async {
+    showDeletedComments = v;
+    await _prefs((p) => p.setBool(_kShowDeleted, v));
+  }
+
+  Future<void> setAutoCollapseViewed(bool v) async {
+    autoCollapseViewed = v;
+    await _prefs((p) => p.setBool(_kAutoCollapse, v));
+  }
+
+  Future<void> setAutoExpandComments(bool v) async {
+    autoExpandComments = v;
+    await _prefs((p) => p.setBool(_kAutoExpandComments, v));
+  }
+
+  Future<void> setBatchSize(int v) async {
+    batchSize = v;
+    await _prefs((p) => p.setInt(_kBatchSize, v));
+  }
+
+  Future<void> addFilterKeyword(String kw) async {
+    kw = kw.trim().toLowerCase();
+    if (kw.isEmpty || filterKeywords.contains(kw)) return;
+    filterKeywords = [...filterKeywords, kw];
+    await _prefs((p) => p.setString(_kFilterKeywords, jsonEncode(filterKeywords)));
+  }
+
+  Future<void> removeFilterKeyword(String kw) async {
+    filterKeywords = filterKeywords.where((k) => k != kw).toList();
+    await _prefs((p) => p.setString(_kFilterKeywords, jsonEncode(filterKeywords)));
+  }
+
+  Future<void> setUserNote(int userId, String note) async {
+    if (note.trim().isEmpty) {
+      userNotes = Map.from(userNotes)..remove(userId);
+    } else {
+      userNotes = {...userNotes, userId: note.trim()};
+    }
+    final toSave = userNotes.map((k, v) => MapEntry(k.toString(), v));
+    await _prefs((p) => p.setString(_kUserNotes, jsonEncode(toSave)));
+  }
+
+  Future<void> markViewed(int postId) async {
+    if (viewedPostIds.contains(postId)) return;
+    viewedPostIds = {...viewedPostIds, postId};
+    if (viewedPostIds.length > 1000) {
+      viewedPostIds = viewedPostIds.skip(500).toSet();
+    }
+    await _prefs((p) => p.setString(_kViewedPosts, jsonEncode(viewedPostIds.toList())));
+  }
+
+  bool isFiltered(dynamic post) {
+    if (filterKeywords.isEmpty) return false;
+    final title = (post['title'] ?? '').toString().toLowerCase();
+    final blocks = post['blocks'] as List? ?? [];
+    final text = blocks
+        .where((b) => b['type'] == 'text')
+        .map((b) => (b['data']?['text'] ?? '').toString())
+        .join(' ')
+        .toLowerCase()
+        .replaceAll(RegExp(r'<[^>]*>'), '');
+    final content = '$title $text';
+    return filterKeywords.any((kw) => content.contains(kw));
+  }
+}

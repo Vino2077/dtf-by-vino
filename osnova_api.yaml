@@ -1,0 +1,2423 @@
+openapi: "3.0.1"
+info:
+  version: 2.31.0
+  title: "Osnova API"
+  description: >-
+    Открытая документация API для [vc.ru](//vc.ru), [DTF](//dtf.ru) и [TJ](//tjournal.ru). В данной версии доступны не все методы, нужно комбинировать запросы с версией [1.9](../v1/swagger.html).
+
+    ## Ограничения API ##
+
+    * Не чаще 3-х запросов к API в секунду
+
+    * Существуют также отдельные ограничения на отправку комментариев, лайков и др.
+
+    ## Заголовки (headers) ##
+
+    При запросе к API необходимо передавать поле `User-agent` в формате `{app_name}-app/{app_version}; {app_build_type} ({device_name}; {os_name}/{os_version}; {locale}; {screen_height}x{screen_width})`. Например: `dtf-app/2.2.0; release (Pixel 2; Android/9; ru_RU; 1980x1794)`.
+
+
+    Некоторые запросы доступны только для авторизованных пользователей (методы обозначены замком). Для этого необходимо передавать авторизационный токен `X-Device-Token` в заголовке запроса, он возвращается с сервера при авторизации.
+
+
+    Срок действия токена - 3 месяца, нужно обновлять через метод `auth/refresh-token` со refresh токеном `X-Refresh-Token`, который живет 1 год и отдается вместе с авторизационным в заголовке.
+
+
+    Для доступа к тестовым серверам необходимо поле `Authorization` (доступно только для разработчиков Комитета).
+
+    ## Авторизация по API-токену
+
+    Как авторизоваться в API используя специальный токен со страницы настроек пользователя
+
+    1. Зайти в [свой профиль](https://tjournal.ru/u/me/settings)
+
+    2. Справа нажать на ссылку «Инструменты для разработчика»
+
+    3. Вы увидите токен, с которым можно обращаться к API
+
+        [https://www.notion.so/dd3f2ae5a4bc4a7fbeb4598f86eb37aa#7734c1a41c834da5b7425eac905f39ba](https://www.notion.so/dd3f2ae5a4bc4a7fbeb4598f86eb37aa#7734c1a41c834da5b7425eac905f39ba)
+
+    4. Можно использовать этот токен для отправки запросов к API от имени вашего аккаунта
+
+    ## WebSocket IO ##
+
+    Адреса серверов: `https://ws-sio.dtf.ru`, `https://ws-sio.vc.ru`, `https://ws-sio.tjournal.ru`
+
+    Подключение к каналам или отключение реализуется через `emit` событий `subscribe/unsubscribe` c JSON объекта вида `{"channel": "%channel_name%"}`. Например: `{"channel": "feed"}`.
+
+    Список каналов:
+
+    - `mobile:{userHash из SubsiteAuthorizedUser}` - личный канал авторизованного пользователя для уведомлений. Например: `mobile:dd3f2ae5a4bc4a7fbeb4598f86eb37aa`
+
+      Типы событий:
+
+        - `4` - лайк комментария
+
+        - `8` - новый комментарий к записи
+
+        - `16` - ответ на комментарий
+
+        - `32` - пользователя упомянули в комментарии
+
+        - `64` - подсайт опубликовал новую запись
+
+      Каждое уведомление содержит поле `textParts`, чтобы сообщение можно было собрать на стороне клиента в зависимости от языковых установок.
+
+    - `m:{mHash из SubsiteAuthorizedUser}` - личный канал авторизованного пользователя для мессенджера вида `m:dd3f2ae5a4bc4a7fbeb4598f86eb37aa`
+
+      Типы событий:
+
+        - `messenger_event` - событие от мессенджера
+
+      Типы action:
+
+        - `addMessage` - новое сообщение
+
+        - `typing` - пользователь печатает
+
+        - `messagesRemoved` - сообщения удалены
+
+        - `markAsRead` - канал прочитано до указанного момента
+
+    - `api` - информация об изменениях контента на сайте
+
+      Типы событий:
+
+        - `content voted` - лайк записи
+
+        - `new_entry_published` - опубликована новая запись
+
+    - `content-hits-mobile-{id записи}` - информация о количестве просмотров текущей записи. Например: `content-hits-mobile-1234`
+
+      Типы событий:
+
+        - `content viewed` - новое количество просмотров записи
+
+    - `api:comments-{id записи}` - информация о комментариях текущей записи. Например: `api:comments-1234`
+
+      Типы событий:
+
+        - `comment voted` - лайк комментария
+
+        - `comment_created` - создан новый комментарий
+
+        - `comment_edited` - отредактирован комментарий
+
+    - `online` - статусы онлайна у пользователей
+
+      Типы событий:
+
+        - `user_turned_online` - пользователь онлайн
+
+  termsOfService: "https://tjournal.ru/terms"
+  contact:
+    name: "KMTT Developers"
+    url: "https://cmtt.ru"
+    email: "support@cmtt.ru"
+  license:
+    name: "Apache 2.0"
+    url: "http://www.apache.org/licenses/LICENSE-2.0.html"
+servers:
+  - url: https://api.dtf.ru/v{version}
+    description: Production server
+    variables:
+      version:
+        enum:
+          - '2.31'
+        default: '2.31'
+  - url: https://api.tjournal.ru/v{version}
+    description: Production server
+    variables:
+      version:
+        enum:
+          - '2.31'
+        default: '2.31'
+  - url: https://api.vc.ru/v{version}
+    description: Production server
+    variables:
+      version:
+        enum:
+          - '2.31'
+        default: '2.31'
+paths:
+  /bookmarks:
+    get:
+      tags:
+        - Bookmarks
+      description: Избранное
+      operationId: getBookmarks
+      security:
+        - XDeviceToken: [ ]
+      parameters:
+        - name: type
+          in: query
+          description: Фильтр избранного
+          required: true
+          schema:
+            type: string
+            format: string
+            enum:
+              - all
+              - posts
+              - jobs
+              - events
+              - comments
+        - name: count
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int64
+        - name: offset
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int64
+      responses:
+        '200':
+          description: Bookmarks result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  result:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/BookmarksItem'
+  /favorite:
+    post:
+      tags:
+        - Content
+      description: Добавить контент в избранное
+      operationId: postFavorite
+      security:
+        - XDeviceToken: [ ]
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              properties:
+                id:
+                  type: integer
+                  format: int64
+                  example: 1234
+                type:
+                  type: integer
+                  format: int64
+                  example: 1
+                  description: >
+                    Тип контента:
+                       * `1` - запись
+                       * `2` - комментарий
+                       * `3` - подсайт
+                  enum:
+                    - 1
+                    - 2
+                    - 3
+      responses:
+        '200':
+          description: Fave result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  result:
+                    type: object
+                    properties:
+                      success:
+                        type: boolean
+                      count:
+                        type: integer
+                  message:
+                    type: string
+  /unfavorite:
+    post:
+      tags:
+        - Content
+      description: Удалить контент из избранного
+      operationId: postUnfavorite
+      security:
+        - XDeviceToken: [ ]
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              properties:
+                content_id:
+                  type: integer
+                  format: int64
+                  example: 1234
+                type:
+                  type: integer
+                  format: int64
+                  example: 1
+                  description: >
+                    Тип контента:
+                       * `1` - запись
+                       * `2` - комментарий
+                       * `3` - подсайт
+                  enum:
+                    - 1
+                    - 2
+                    - 3
+      responses:
+        '200':
+          description: Unfave result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  result:
+                    type: object
+                    properties:
+                      success:
+                        type: boolean
+                      count:
+                        type: integer
+                  message:
+                    type: string
+  /repost/create:
+    post:
+      tags:
+        - Timeline
+      description: Сделать репост записи
+      operationId: postRepostCreate
+      security:
+        - XDeviceToken: [ ]
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              properties:
+                content_id:
+                  description: Id записи
+                  type: integer
+                  format: int64
+                  example: 1234
+                subsite_id:
+                  description: Id подсайта
+                  type: integer
+                  format: int64
+                  example: 1234
+      responses:
+        '200':
+          description: Osnova result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  result:
+                    type: object
+                    properties:
+                      result:
+                        type: boolean
+                      count:
+                        type: integer
+                      mine_count:
+                        type: integer
+                      subsite_name:
+                        type: string
+                  message:
+                    type: string
+  /repost/remove:
+    post:
+      tags:
+        - Timeline
+      description: Удалить репост записи
+      operationId: postRepostRemove
+      security:
+        - XDeviceToken: [ ]
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              properties:
+                content_id:
+                  description: Id записи
+                  type: integer
+                  format: int64
+                  example: 1234
+                subsite_id:
+                  description: Id подсайта
+                  type: integer
+                  format: int64
+                  example: 1234
+      responses:
+        '200':
+          description: Osnova result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  result:
+                    type: object
+                    properties:
+                      result:
+                        type: boolean
+                      count:
+                        type: integer
+                      mine_count:
+                        type: integer
+                      subsite_name:
+                        type: string
+                  message:
+                    type: string
+  /subsite/setisadult:
+    post:
+      tags:
+        - Subsite
+      description: Подтвердить возраст 18+
+      operationId: postSubsiteSetisadult
+      security:
+        - XDeviceToken: [ ]
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              properties:
+                is_adult:
+                  description: Пользователь взрослый да/нет
+                  type: boolean
+                  example: false
+      responses:
+        '200':
+          description: Osnova result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  result:
+                    type: object
+                    properties:
+                      is_adult:
+                        type: boolean
+                  message:
+                    type: string
+  /subsite/update:
+    post:
+      tags:
+        - Subsite
+      description: Изменение настроек подсайта
+      operationId: postSubsiteUpdate
+      security:
+        - XDeviceToken: [ ]
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              properties:
+                subsiteId:
+                  required: true
+                  description: Id подсайта
+                  type: integer
+                  format: int64
+                  example: 1234
+                description:
+                  description: Описание профиля
+                  type: string
+                  example: Test description
+                is_blur_nsfw:
+                  description: Вкл/выкл блюрить записи 18+
+                  type: boolean
+                  example: false
+      responses:
+        '200':
+          description: Osnova result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  result:
+                    type: object
+                    properties:
+                      description:
+                        type: string
+                      is_blur_nsfw:
+                        type: boolean
+                  message:
+                    type: string
+  /subsite/name/change:
+    post:
+      tags:
+        - Subsite
+      description: Изменение названия подсайта. Можно делать раз в три месяца.
+      operationId: postSubsiteNameChange
+      security:
+        - XDeviceToken: [ ]
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              properties:
+                subsiteId:
+                  required: true
+                  description: Id подсайта
+                  type: integer
+                  format: int64
+                  example: 1234
+                name:
+                  required: true
+                  description: Название подсайта
+                  type: string
+                  example: Subsite name
+      responses:
+        '200':
+          description: Osnova result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  result:
+                    type: object
+                    properties:
+                      name:
+                        type: string
+                      result:
+                        type: boolean
+                  message:
+                    type: string
+  /auth/refresh-token:
+    post:
+      tags:
+        - Auth
+      description: Обновить токен авторизации. Новый токен возвращается в X-Auth-Token
+      operationId: postAuthRefreshToken
+      security:
+        - XDeviceToken: [ ]
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              properties:
+                refreshToken:
+                  description: refresh токен из Subsite
+                  type: string
+                  example: dfgd57sd89989bixm5cf3dfe4vgjfds5fnfea45
+      responses:
+        '200':
+          description: Ответ игнорируется, X-Refresh-Token отдается в заголовке
+  /repost/getsubsites:
+    get:
+      tags:
+        - Timeline
+      description: Получить список подсайтов, куда можно делать репост
+      operationId: getRepostGetsubsites
+      security:
+        - XDeviceToken: [ ]
+      parameters:
+        - name: content_id
+          in: query
+          required: true
+          description: Id записи для репоста
+          schema:
+            type: integer
+            format: int64
+      responses:
+        '200':
+          description: Osnova result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  result:
+                    type: object
+                    properties:
+                      result:
+                        type: boolean
+                      count:
+                        type: integer
+                      mine_count:
+                        type: integer
+                      subsite_name:
+                        type: string
+                  message:
+                    type: string
+  /content:
+    get:
+      tags:
+        - Content
+      description: Получить контент по Id
+      operationId: getContent
+      parameters:
+        - name: id
+          in: query
+          required: true
+          description: Id записи
+          schema:
+            type: integer
+            format: int64
+      responses:
+        '200':
+          description: Entry result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  result:
+                    $ref: '#/components/schemas/Entry'
+                  message:
+                    type: string
+  /news:
+    get:
+      tags:
+        - Timeline
+      description: Список новостей
+      operationId: getNews
+      parameters:
+        - name: lastId
+          in: query
+          required: false
+          description: Id последней записи. Необходимо для пагинации
+          schema:
+            type: integer
+            format: int64
+      responses:
+        '200':
+          description: Osnova result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  result:
+                    type: object
+                    properties:
+                      news:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/Entry'
+                      lastId:
+                        type: number
+                        description: ID последнего элемента для подгрузки
+                        example: 23102
+                  message:
+                    type: string
+  /news/min:
+    get:
+      tags:
+        - Timeline
+      description: Короткий список новостей (для системного виджета)
+      operationId: getNewsMin
+      responses:
+        '200':
+          description: Osnova result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  result:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Entry'
+                  message:
+                    type: string
+  /subsite/me:
+    get:
+      tags:
+        - Subsite
+      description: Информация об авторизованном пользователе
+      operationId: getSubsiteMe
+      security:
+        - XDeviceToken: [ ]
+      responses:
+        '200':
+          description: Osnova result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  result:
+                    $ref: '#/components/schemas/SubsiteAuthorizedUser'
+                  message:
+                    type: string
+  /subsite:
+    get:
+      tags:
+        - Subsite
+      description: Информация о подсайте/пользователе
+      operationId: getSubsite
+      parameters:
+        - name: id
+          in: query
+          required: true
+          description: Id подсайта
+          schema:
+            type: integer
+            format: int64
+      responses:
+        '200':
+          description: Osnova result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  result:
+                    $ref: '#/components/schemas/Subsite'
+                  message:
+                    type: string
+  /subsite/subscribers:
+    get:
+      tags:
+        - Subsite
+      description: Список подписчиков подсайта
+      operationId: getSubsiteSubscribers
+      parameters:
+        - name: subsiteId
+          in: query
+          required: true
+          description: Id подсайта
+          schema:
+            type: integer
+            format: int64
+        - name: lastId
+          in: query
+          required: false
+          description: Значение lastId из предыдущего запроса
+          schema:
+            type: integer
+            format: int64
+        - name: lastSortingValue
+          in: query
+          required: false
+          description: Значение lastSortingValue из предыдущего запроса
+          schema:
+            type: integer
+            format: int64
+      responses:
+        '200':
+          description: Osnova result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  result:
+                    type: object
+                    properties:
+                      items:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/Subsite'
+                      lastId:
+                        type: number
+                      lastSortingValue:
+                        type: number
+                  message:
+                    type: string
+  /subsite/subscriptions:
+    get:
+      tags:
+        - Subsite
+      description: Список подписок подсайта
+      operationId: getSubsiteSubscriptions
+      parameters:
+        - name: subsiteId
+          in: query
+          required: true
+          description: Id подсайта
+          schema:
+            type: integer
+            format: int64
+        - name: page
+          in: query
+          required: false
+          description: Значение nextPage из предыдущего запроса
+          schema:
+            type: integer
+            format: int64
+      responses:
+        '200':
+          description: Osnova result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  result:
+                    type: object
+                    properties:
+                      items:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/Subsite'
+                      nextPage:
+                        type: number
+                      total:
+                        type: number
+                  message:
+                    type: string
+  /subsite/votes:
+    get:
+      tags:
+        - Subsite
+      description: Список оценок пользователя
+      operationId: getSubsiteVotes
+      security:
+        - XDeviceToken: [ ]
+      parameters:
+        - name: subsiteId
+          in: query
+          required: true
+          description: Id подсайта
+          schema:
+            type: integer
+            format: int64
+        - name: vote
+          in: query
+          required: false
+          example: positive
+          description: >
+            Тип оценки
+             * Пустое значение - Все
+             * `positive` - Позитивные
+             * `negative` - Отрицательные
+          schema:
+            type: string
+            format: string
+        - name: type
+          in: query
+          required: false
+          example: entries
+          description: >
+            Тип контента:
+             * `entries` - Записи
+          schema:
+            type: string
+            format: string
+        - name: lastId
+          in: query
+          required: false
+          description: Значение lastId из предыдущего запроса
+          schema:
+            type: integer
+            format: int64
+        - name: lastSortingValue
+          in: query
+          required: false
+          description: Значение lastSortingValue из предыдущего запроса
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Osnova result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  result:
+                    type: object
+                    properties:
+                      items:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/Entry'
+                      lastId:
+                        type: number
+                      lastSortingValue:
+                        type: number
+                  message:
+                    type: string
+  /subsite/credentials:
+    get:
+      tags:
+        - Subsite
+      description: Список реквизитов для входа
+      operationId: getSubsiteCredentials
+      security:
+        - XDeviceToken: [ ]
+      responses:
+        '200':
+          description: Osnova result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  result:
+                    type: object
+                    properties:
+                      credentials:
+                        type: array
+                        items:
+                          properties:
+                            type:
+                              description: >
+                                Тип метода входа в аккаунт:
+                                  * `twitter` - Twitter
+                                  * `vk` - Vkontake
+                                  * `facebook` - Facebook
+                                  * `apple` - Apple
+                                  * `password` - Email
+                                  * `google` - Google
+                              type: string
+                            id:
+                              type: string
+                            name:
+                              type: string
+                            url:
+                              type: string
+                            login:
+                              type: string
+                  message:
+                    type: string
+  /donates/addCard:
+    post:
+      tags:
+        - Donates
+      description: Привязка карты
+      security:
+        - XDeviceToken: [ ]
+      responses:
+        '200':
+          description: Успешный ответ
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    description: Сообщение
+                  result:
+                    type: object
+                    properties:
+                      url:
+                        type: string
+                        description: Ссылка на форму прикрепления карты
+  /donates:
+    get:
+      tags:
+        - Donates
+      description: Получение списка донатов (вместе с выводами)
+      security:
+        - XDeviceToken: [ ]
+      responses:
+        '200':
+          description: Успешный ответ
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    description: Сообщение
+                  result:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Donate'
+
+  /donates/form:
+    get:
+      tags:
+        - Donates
+      description: Получение формы вывода денег
+      security:
+        - XDeviceToken: [ ]
+      responses:
+        '200':
+          description: Успешный ответ
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  totalWithdrawalAmount:
+                    type: number
+                    description: Сколько денег получит пользователь
+                  totalRevenueAmount:
+                    type: number
+                    description: Сколько заработает Комитет
+
+  /donates/withdraw:
+    post:
+      tags:
+        - Donates
+      description: Вывод денег
+      security:
+        - XDeviceToken: [ ]
+      responses:
+        '200':
+          description: Успешный ответ
+
+  /comments/add:
+    post:
+      tags:
+        - Comment
+      description: Создание комментария
+      security:
+        - XDeviceToken: [ ]
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              properties:
+                id:
+                  description: Идентификатор статьи
+                  type: integer
+                  required: true
+                text:
+                  description: Текст комментария
+                  type: string
+                  required: true
+                attachments:
+                  description: Аттачи
+                  type: string
+                amount:
+                  description: Сумма доната
+                  type: integer
+      responses:
+        '200':
+          description: Успешный результат
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    description: Сообщение
+                    type: string
+                  result:
+                    type: object
+                    properties:
+                      payment_url:
+                        description: Ссылка на платежную форму
+                        type: string
+
+  /comments:
+    get:
+      tags:
+        - Comment
+      description: Получить комментарии записи/подсайта
+      operationId: getComments
+      parameters:
+        - name: subsiteId
+          in: query
+          required: true
+          description: Id подсайта. Требуется, если не указан contentId
+          schema:
+            type: integer
+            format: int64
+        - name: contentId
+          in: query
+          required: true
+          description: Id записи. Требуется, если не указан subsiteId
+          schema:
+            type: integer
+            format: int64
+        - name: sorting
+          in: query
+          required: false
+          description: >
+            Тип сортировки:
+              * `hotness` - по популярности
+              * `date` - свежее
+              * `day` - свежее за день
+              * `week` - свежее за неделю
+              * `month` - свежее месяц
+              * `year` - свежее за год
+              * `all` - свежее за все время
+          schema:
+            type: string
+            format: string
+            enum:
+              - hotness
+              - date
+              - day
+              - week
+              - month
+              - year
+              - all
+          example: 'date'
+        - name: lastId
+          in: query
+          required: false
+          description: Значение lastId из предыдущего запроса
+          schema:
+            type: integer
+            format: int64
+        - name: lastSortingValue
+          in: query
+          required: false
+          description: Значение lastSortingValue из предыдущего запроса
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Osnova result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  result:
+                    type: object
+                    properties:
+                      items:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/Comment'
+                      lastId:
+                        type: number
+                      lastSortingValue:
+                        type: number
+                  message:
+                    type: string
+  /onboarding:
+    get:
+      tags:
+        - Timeline
+      description: Список предлагаемых подсайтов для пустого аккаунта
+      operationId: getOnboarding
+      security:
+        - XDeviceToken: [ ]
+      responses:
+        '200':
+          description: Osnova result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  result:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/SubsiteSmall'
+                  message:
+                    type: string
+  /rating:
+    get:
+      tags:
+        - Rating
+      description: Рейтинг
+      operationId: getRating
+      responses:
+        '200':
+          description: Osnova result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  result:
+                    type: object
+                    properties:
+                      tabs:
+                        type: array
+                        items:
+                          properties:
+                            name:
+                              type: string
+                            tag:
+                              type: string
+                            data:
+                              type: array
+                              items:
+                                properties:
+                                  categoryName:
+                                    type: string
+                                  categoryId:
+                                    type: string
+                                  items:
+                                    type: array
+                                    items:
+                                      properties:
+                                        subsiteId:
+                                          type: number
+                                        position:
+                                          type: integer
+                                        state:
+                                          type: integer
+                                        rating:
+                                          type: integer
+                      subsites:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/SubsiteSmall'
+                  message:
+                    type: string
+  /discover:
+    get:
+      tags:
+        - Discover
+      description: Рекомендуемые подсайты
+      operationId: getDiscover
+      responses:
+        '200':
+          description: Osnova result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  result:
+                    type: object
+                    properties:
+                      blogs:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/SubsiteSmall'
+                      sections:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/SubsiteSmall'
+                      companies:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/SubsiteSmall'
+                      rating:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/SubsiteSmall'
+                      forced:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/SubsiteSmall'
+                  message:
+                    type: string
+  /feed:
+    get:
+      tags:
+        - Timeline
+      description: Главная лента записей
+      operationId: getFeed
+      parameters:
+        - name: pageName
+          in: query
+          required: false
+          description: >
+            Название ленты:
+              * `popular` - популярное всего сайта
+              * `new` - свежее всего сайта
+              * `my` - собственная лента пользователя с учетом подписок
+          schema:
+            type: string
+            enum:
+              - popular
+              - new
+              - my
+          example: popular
+        - name: sorting
+          in: query
+          required: false
+          description: >
+            Тип сортировки для pageName = `popular`:
+              * `hotness` - по популярности
+              * `day` - свежее за день
+              * `week` - свежее за неделю
+              * `month` - свежее месяц
+              * `year` - свежее за год
+              * `all` - свежее за все время
+
+            Тип сортировки для pageName = `new`:
+              * `from-10` - записи с рейтингом от -10
+              * `from5` - записи с рейтингом от 5
+              * `from10` - записи с рейтингом от 10
+              * `all` - свежее с любым рейтингом
+
+            Тип сортировки для pageName = `my`:
+              * `hotness` - по популярности
+              * `new` - по дате
+          schema:
+            type: string
+            format: string
+            enum:
+              - hotness
+              - day
+              - week
+              - month
+              - year
+              - all
+              - from-10
+              - from5
+              - from10
+              - new
+          example: 'hotness'
+        - name: lastId
+          in: query
+          required: false
+          description: Значение lastId из предыдущего запроса
+          schema:
+            type: integer
+            format: int64
+        - name: lastSortingValue
+          in: query
+          required: false
+          description: Значение lastSortingValue из предыдущего запроса
+          schema:
+            type: integer
+            format: int64
+        - name: excludeIds
+          in: query
+          required: false
+          description: Список id записей, которые нужно скрыть из ленты
+          schema:
+            type: array
+            items:
+              type: integer
+      responses:
+        '200':
+          description: Timeline result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  result:
+                    type: object
+                    properties:
+                      items:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/TimelineItem'
+                      lastId:
+                        type: number
+                      lastSortingValue:
+                        type: number
+                  message:
+                    type: string
+  /timeline:
+    get:
+      tags:
+        - Timeline
+      description: >
+        Лента записей.
+
+
+        UPD: Раньше использовался для отображения главной ленты, теперь он заменен роутом /feed.
+      operationId: getTimeline
+      parameters:
+        - name: allSite
+          in: query
+          required: false
+          description: >
+            Варианты:
+              * `ВКЛ` - Показать ленту всего сайта (Deprecated)
+              * `ВЫКЛ` -  Показать ленту только указанных подсайтов в subsitesIds или личную ленту пользователя
+          schema:
+            type: boolean
+          example: true
+        - name: sorting
+          in: query
+          required: false
+          description: >
+            Тип сортировки:
+              * `hotness` - по популярности
+              * `date` - свежее
+              * `day` - свежее за день
+              * `week` - свежее за неделю
+              * `month` - свежее месяц
+              * `year` - свежее за год
+              * `all` - свежее за все время
+          schema:
+            type: string
+            format: string
+            enum:
+              - hotness
+              - date
+              - day
+              - week
+              - month
+              - year
+              - all
+          example: 'date'
+        - name: subsitesIds
+          in: query
+          required: false
+          description: Id подсайтов через запятую, которые нужно включить в ленту
+          schema:
+            type: string
+          example: 1, 2
+        - name: hashtag
+          in: query
+          required: false
+          description: Показать записи только с указанным хештегом
+          schema:
+            type: string
+          example: игры
+        - name: lastId
+          in: query
+          required: false
+          description: Значение lastId из предыдущего запроса
+          schema:
+            type: integer
+            format: int64
+        - name: lastSortingValue
+          in: query
+          required: false
+          description: Значение lastSortingValue из предыдущего запроса
+          schema:
+            type: integer
+            format: int64
+      responses:
+        '200':
+          description: Timeline result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  result:
+                    type: object
+                    properties:
+                      items:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/TimelineItem'
+                      lastId:
+                        type: number
+                      lastSortingValue:
+                        type: number
+                  message:
+                    type: string
+  /search:
+    get:
+      tags:
+        - Search
+      description: Поиск по записям + подсайтам
+      operationId: getSearch
+      parameters:
+        - name: query
+          in: query
+          required: true
+          description: Строка для поиска
+          schema:
+            type: string
+            format: string
+          example: 'apple'
+        - name: type
+          in: query
+          description: >
+            Тип подсайтов:
+              * `any` - Все
+              * `user` - Пользователи
+              * `section` - Подсайты
+              * `company` - Компании
+          schema:
+            type: string
+            format: string
+            enum:
+              - any
+              - user
+              - section
+              - company
+          example: 'any'
+        - name: lastId
+          in: query
+          description: Значение lastId из предыдущего запроса
+          schema:
+            type: integer
+            format: int32
+          example: 100
+      responses:
+        '200':
+          description: Osnova result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  result:
+                    type: object
+                    properties:
+                      subsites:
+                        type: object
+                        properties:
+                          users:
+                            type: array
+                            items:
+                              $ref: '#/components/schemas/SubsiteSmall'
+                          sections:
+                            type: array
+                            items:
+                              $ref: '#/components/schemas/SubsiteSmall'
+                          companies:
+                            type: array
+                            items:
+                              $ref: '#/components/schemas/SubsiteSmall'
+                      contents:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/Entry'
+                      lastId:
+                        type: number
+  /auth/password/change:
+    post:
+      tags:
+        - Auth
+      description: Запрос на смену пароля
+      operationId: postAuthPasswordChange
+      security:
+        - XDeviceToken: [ ]
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              properties:
+                values:
+                  type: object
+                  properties:
+                    login:
+                      description: Почта аккаунта
+                      type: string
+                      required: true
+                      example: mail@mail.ru
+      responses:
+        '200':
+          description: Osnova result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  result:
+                    type: object
+                    properties:
+                      message:
+                        type: string
+                  message:
+                    type: string
+  /subsite/social/unlink:
+    post:
+      tags:
+        - Subsite
+      description: Отвязать соцсеть от аккаунта пользователя
+      operationId: postSubsiteSocialUnlink
+      security:
+        - XDeviceToken: [ ]
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              properties:
+                id:
+                  description: Id соцсети
+                  type: string
+                  required: true
+                  example: mail@mail.ru
+                type:
+                  description: Тип соцсети
+                  type: string
+                  required: true
+                  enum:
+                    - twitter
+                    - vk
+                    - facebook
+                    - apple
+                    - google
+      responses:
+        '200':
+          description: ok
+  /subsite/email/change:
+    post:
+      tags:
+        - Subsite
+      description: Смена почты для пользователя
+      operationId: postSubsiteEmailChange
+      security:
+        - XDeviceToken: [ ]
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              properties:
+                subsiteId:
+                  description: Id аккаунта
+                  type: integer
+                  format: int64
+                  required: true
+                  example: 1234
+                new_email:
+                  description: Новая почта аккаунта
+                  type: string
+                  required: true
+                  example: mail@mail.ru
+      responses:
+        '200':
+          description: Osnova result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  result:
+                    type: object
+                    properties:
+                      message:
+                        type: string
+                  message:
+                    type: string
+  /comment/etcControls:
+    get:
+      tags:
+        - Comment
+      description: Получить поле etcControls для комментария
+      operationId: getCommentEtcControls
+      parameters:
+        - name: commentId
+          in: query
+          required: true
+          description: Id комментария
+          schema:
+            type: integer
+            format: int64
+      responses:
+        '200':
+          description: Osnova result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  result:
+                    $ref: '#/components/schemas/EtcControls'
+                  message:
+                    type: string
+  /content/etcControls:
+    get:
+      tags:
+        - Content
+      description: Получить поле etcControls для записи
+      operationId: getContentEtcControls
+      parameters:
+        - name: id
+          in: query
+          required: true
+          description: Id записи
+          schema:
+            type: integer
+            format: int64
+      responses:
+        '200':
+          description: Osnova result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  result:
+                    $ref: '#/components/schemas/EtcControls'
+                  message:
+                    type: string
+  /auth/recover/request:
+    post:
+      tags:
+        - Auth
+      description: Восстановление пароля
+      operationId: postAuthRecoverRequest
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              properties:
+                login:
+                  description: Почта аккаунта
+                  type: string
+                  required: true
+                  example: mail@mail.ru
+      responses:
+        '200':
+          description: ok
+  /auth/register/request:
+    post:
+      tags:
+        - Auth
+      description: Регистрация пользователя
+      operationId: postAuthRegisterRequest
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              properties:
+                name:
+                  description: Имя пользователя
+                  type: string
+                  required: true
+                  example: Алексей Навальный
+                login:
+                  description: Почта аккаунта
+                  type: string
+                  required: true
+                  example: mail@mail.ru
+                password:
+                  description: Пароль аккаунта
+                  type: string
+                  required: true
+                  example: password1234
+      responses:
+        '200':
+          description: ok
+  /auth/social/{type}:
+    post:
+      tags:
+        - Auth
+      description: Авторизация через соцсеть
+      operationId: postAuthSocial
+      parameters:
+        - name: type
+          in: path
+          description: Тип соцсети
+          required: true
+          schema:
+            type: string
+            format: string
+            enum:
+              - twitter
+              - vk
+              - facebook
+              - googleplus
+              - email
+              - apple
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              properties:
+                token:
+                  description: Токен отданный соцсетью
+                  type: string
+                  required: true
+                  example: dfgd57sd89989bixm5cf3dfe4vgjfds5fnfea45
+                email:
+                  description: Email отданный соцсетью
+                  type: string
+                  required: true
+                  example: mail@mail.ru
+                linking:
+                  description: Если 1, то аккаунт привяжется к текущему. Новый аккаунт создан не будет, если его нет.
+                  type: integer
+                  format: int32
+                  required: false
+                  default: 0
+                  example: 0
+                  enum:
+                    - 1
+                    - 0
+      responses:
+        '200':
+          description: Osnova result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  result:
+                    $ref: '#/components/schemas/SubsiteAuthorizedUser'
+                  message:
+                    type: string
+  /events:
+    get:
+      tags:
+        - Events
+      description: Возвращает список мероприятий
+      operationId: getEvents
+      parameters:
+        - name: lastId
+          in: query
+          required: false
+          description: Id последнего мероприятия. Необходимо для пагинации
+          schema:
+            type: integer
+            format: int64
+        - name: city_id
+          in: query
+          required: false
+          schema:
+            type: number
+        - name: specialization_ids
+          in: query
+          required: false
+          description: Список id специализаций серез запятую
+          example: 1234,5678,9012
+          schema:
+            type: string
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  result:
+                    type: object
+                    properties:
+                        events:
+                          $ref: '#/components/schemas/Event'
+                        lastId:
+                          type: number
+                          description: ID последнего элемента для подгрузки
+                          example: 23102
+  /events/widget:
+    get:
+      tags:
+        - Events
+      description: Возвращает список мероприятий для виджета в ленте записей
+      operationId: getEventsWidget
+      parameters:
+        - name: lastId
+          in: query
+          required: false
+          description: Id последнего мероприятия. Необходимо для пагинации
+          schema:
+            type: integer
+            format: int64
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  result:
+                    type: object
+                    properties:
+                        events:
+                          $ref: '#/components/schemas/Event'
+                        lastId:
+                          type: number
+                          description: ID последнего элемента для подгрузки
+                          example: 23102
+components:
+  securitySchemes:
+    XDeviceToken:
+      type: apiKey
+      name: X-Device-Token
+      in: header
+  schemas:
+    BookmarksItem:
+      properties:
+        type:
+          type: string
+          enum:
+            - news
+            - entry
+            - vacancies
+            - events
+            - onboarding
+            - flash
+            - rating
+          example: entry
+        date:
+          type: number
+        data:
+          oneOf:
+            - type: object
+            - $ref: '#/components/schemas/Entry'
+            - $ref: '#/components/schemas/Vacancy'
+            - $ref: '#/components/schemas/Event'
+            - $ref: '#/components/schemas/Comment'
+          example:
+            {}
+    Attach:
+      properties:
+        id:
+          type: string
+        uuid:
+          type: string
+        additionalData:
+          type: string
+        type:
+          type: string
+        color:
+          type: string
+        width:
+          type: number
+        height:
+          type: number
+        size:
+          type: number
+        name:
+          type: string
+        origin:
+          type: string
+        title:
+          type: string
+        description:
+          type: string
+        url:
+          type: string
+        image:
+          type: object
+          properties:
+            type:
+              type: string
+            data:
+              $ref: '#/components/schemas/AttachImage'
+    AttachImage:
+      properties:
+        id:
+          type: string
+        uuid:
+          type: string
+        additionalData:
+          type: string
+        type:
+          type: string
+        color:
+          type: string
+        width:
+          type: number
+        height:
+          type: number
+        size:
+          type: number
+        name:
+          type: string
+        origin:
+          type: string
+        title:
+          type: string
+        description:
+          type: string
+        url:
+          type: string
+    Comment:
+      properties:
+        id:
+          type: number
+        author:
+          $ref: '#/components/schemas/SubsiteSmall'
+        date:
+          type: number
+        lastModificationDate:
+          type: number
+        isFavorited:
+          type: boolean
+        dateFavorite:
+          type: number
+        isEdited:
+          type: boolean
+        likes:
+          $ref: '#/components/schemas/Likes'
+        entry:
+          $ref: '#/components/schemas/EntrySmall'
+        media:
+          type: array
+          items:
+            type: string
+        level:
+          type: integer
+        isPinned:
+          type: boolean
+        isIgnored:
+          type: boolean
+        isRemoved:
+          type: boolean
+        replyTo:
+          type: number
+        text:
+          type: string
+        etcControls:
+          $ref: '#/components/schemas/EtcControls'
+        donate:
+          type: object
+          properties:
+            count:
+              type: number
+    CommentEditor:
+      properties:
+        enabled:
+          type: boolean
+        who:
+          type: string
+        text:
+          type: string
+        until:
+          type: string
+        reason:
+          type: string
+    Entry:
+      properties:
+        id:
+          type: number
+        author:
+          $ref: '#/components/schemas/Subsite'
+        subsiteId:
+          type: number
+        subsite:
+          $ref: '#/components/schemas/Subsite'
+        title:
+          type: string
+          description: Заголовок статьи
+          example: Как сделать и издать комикс
+        date:
+          type: number
+          description: Дата создания статьи
+          example: 1544023089
+        blocks:
+          type: array
+          description: Список блоков для нативной статьи. Для каждого типа блока формат объекта data разный
+          items:
+            $ref: '#/components/schemas/EntryBlock'
+        html:
+          type: object
+          properties:
+            layout:
+              type: string
+            version:
+              type: number
+        counters:
+          type: object
+          properties:
+            comments:
+              type: number
+            favorites:
+              type: number
+            reposts:
+              type: number
+        commentsSeenCount:
+          type: object
+          properties:
+            count:
+              type: number
+            date:
+              type: number
+        dateFavorite:
+          type: number
+        hitsCount:
+          type: number
+        isCommentsEnabled:
+          type: boolean
+        isLikesEnabled:
+          type: boolean
+        isFavorited:
+          type: boolean
+        isRepost:
+          type: boolean
+        likes:
+          $ref: '#/components/schemas/Likes'
+        isPinned:
+          type: boolean
+        canEdit:
+          type: boolean
+        etcControls:
+          $ref: '#/components/schemas/EtcControls'
+        repost:
+          type: object
+          properties:
+            author:
+              $ref: '#/components/schemas/Subsite'
+        isRepostedByMe:
+          type: boolean
+        subscribedToTreads:
+          type: boolean
+        isFlash:
+          type: boolean
+        isBlur:
+          type: boolean
+        isShowThanks:
+          type: boolean
+        isStillUpdating:
+          type: boolean
+        isFilledByEditors:
+          type: boolean
+        isEditorial:
+          type: boolean
+        isPromoted:
+          type: boolean
+        audioUrl:
+          type: string
+        commentEditor:
+          $ref: '#/components/schemas/CommentEditor'
+        coAuthor:
+          $ref: '#/components/schemas/Subsite'
+    EntrySmall:
+      properties:
+        id:
+          type: number
+        subsiteId:
+          type: number
+        title:
+          type: string
+          description: Заголовок статьи
+          example: Как сделать и издать комикс
+    EntryBlock:
+      properties:
+        type:
+          type: string
+          description: Тип блока
+          example: "text"
+        data:
+          type: object
+          description: информация о блоке
+          example: { text: "Запись", text_truncated: "<<<same>>>" }
+        cover:
+          type: boolean
+          example: true
+        anchor:
+          type: string
+          example: ""
+    EtcControls:
+      properties:
+        editEntry:
+          type: boolean
+        pinContent:
+          type: boolean
+        unpublishEntry:
+          type: boolean
+        banSubsite:
+          type: boolean
+        pinComment:
+          type: boolean
+        removeThread:
+          type: boolean
+    Event:
+      properties:
+        id:
+          type: number
+        type:
+          type: integer
+        title:
+          type: string
+        archived:
+          type: boolean
+        city:
+          type: string
+        cityId:
+          type: number
+        cityName:
+          type: string
+        price:
+          type: string
+        date:
+          type: number
+        company:
+          $ref: '#/components/schemas/SubsiteSmall'
+        interested:
+          type: integer
+        address:
+          type: string
+    Likes:
+      properties:
+        summ:
+          type: integer
+        counter:
+          type: integer
+        isLiked:
+          description: >
+            Значения лайка:
+              * `-1` - дизлайк
+              * `0` - нет значения
+              * `1` - лайк
+          type: integer
+          enum:
+            - -1
+            - 0
+            - 1
+    SocialAccount:
+      properties:
+        id:
+          type: number
+        type:
+          type: integer
+        username:
+          type: string
+        title:
+          type: string
+        url:
+          type: string
+    Subsite:
+      properties:
+        id:
+          type: number
+        type:
+          type: integer
+          description: Тип подсайта
+        name:
+          type: string
+        description:
+          type: string
+        avatar:
+          $ref: '#/components/schemas/Attach'
+        cover:
+          $ref: '#/components/schemas/Attach'
+        created:
+          type: number
+        url:
+          type: string
+        subtype:
+          type: string
+          description: Тип подсайта. Как поле `type`, но поточнее
+          enum:
+            - personal_blog
+            - blog
+            - community
+            - company
+        hashtags:
+          type: array
+          items:
+            type: string
+        isSubscribed:
+          type: boolean
+        isVerified:
+          type: boolean
+        isOnline:
+          type: boolean
+        isMuted:
+          type: boolean
+        isUnsubscribable:
+          type: boolean
+        isEnableWriting:
+          type: boolean
+        isSubscribedToNewPosts:
+          type: boolean
+        rating:
+          type: number
+        contacts:
+          type: object
+          properties:
+            socials:
+              type: array
+              items:
+                $ref: '#/components/schemas/SocialAccount'
+            site:
+              type: object
+              properties:
+                title:
+                  type: string
+                url:
+                  type: string
+            email:
+              type: string
+            contacts:
+              type: string
+        commentEditor:
+          $ref: '#/components/schemas/CommentEditor'
+        isAvailableForMessenger:
+          type: boolean
+        isPlus:
+          type: boolean
+        counters:
+          type: object
+          properties:
+            entries:
+              type: number
+            comments:
+              type: number
+            favorites:
+              type: number
+            events:
+              type: number
+            vacancies:
+              type: number
+            subscribers:
+              type: number
+            subscriptions:
+              type: number
+            votes:
+              type: object
+              properties:
+                entries:
+                  type: number
+        threeSubscribers:
+          type: array
+          items:
+            $ref: '#/components/schemas/SubsiteSmall'
+        threeSubscriptions:
+          type: array
+          items:
+            $ref: '#/components/schemas/SubsiteSmall'
+        rules:
+          type: string
+        isFavorited:
+          type: boolean
+        counterSubscribers:
+          type: integer
+        isRecommended:
+          type: boolean
+    SubsiteAuthorizedUser:
+      allOf:
+        - $ref: '#/components/schemas/Subsite'
+        - properties:
+            mHash:
+              type: string
+            mHashExpirationTime:
+              type: number
+            userHash:
+              type: string
+            userHashes:
+              type: array
+              items:
+                type: string
+            canChangeAvatar:
+              type: boolean
+            canChangeCover:
+              type: boolean
+            isBanned:
+              type: boolean
+            pushTopic:
+              type: boolean
+            bannedInfo:
+              type: object
+              properties:
+                text:
+                  type: string
+                until:
+                  type: number
+                reason:
+                  type: string
+            isSubsitesTuned:
+              type: boolean
+            isAdult:
+              type: boolean
+            isBlurNsfw:
+              type: boolean
+            hidePromoBlocks:
+              type: boolean
+            isNameWasChanged:
+              type: boolean
+              description: Было ли изменено название подсайта
+            nameChangeNextDate:
+              type: boolean
+              description: Дата, когда можно будет сменить название подсайта
+    Donate:
+      properties:
+        id:
+          type: number
+        source_subsite_id:
+          type: number
+          description: Идентификатор подсайта отправителя
+        destination_subsite_id:
+          type: number
+          description: Идентификатор подсайта получателя
+        type:
+          type: number
+          description: Статус доната
+        pan:
+          type: string
+          description: Данные карты
+        amount:
+          type: number
+          description: Сумма доната
+        date_created:
+          type: string
+          description: Дата создания доната
+        transaction_id:
+          type: number
+          description: Идентификатор транзакции
+        is_withdrawen:
+          type: boolean
+          description: Был ли выведен донат
+        is_refounded:
+          type: boolean
+          description: Был ли возвращен донат
+        can_withdraw:
+          type: boolean
+          description: Можно ли вывести донат
+
+    SubsiteSmall:
+      properties:
+        id:
+          type: number
+        type:
+          type: integer
+        name:
+          type: string
+        description:
+          type: string
+        avatar:
+          $ref: '#/components/schemas/Attach'
+        cover:
+          $ref: '#/components/schemas/Attach'
+        isSubscribed:
+          type: boolean
+        isFavorited:
+          type: boolean
+        isVerified:
+          type: boolean
+        isOnline:
+          type: boolean
+        isMuted:
+          type: boolean
+        isUnsubscribable:
+          type: boolean
+        isEnabledCommentEditor:
+          type: boolean
+        commentEditor:
+          $ref: '#/components/schemas/CommentEditor'
+        isAvailableForMessenger:
+          type: boolean
+    TimelineItem:
+      properties:
+        type:
+          type: string
+          enum:
+            - news
+            - entry
+            - vacancies
+            - events
+            - onboarding
+            - flash
+            - rating
+          example: entry
+        data:
+          oneOf:
+            - type: object
+            - type: array
+              items:
+                $ref: '#/components/schemas/TimelineSubItem'
+            - type: array
+              items:
+                $ref: '#/components/schemas/TimelineSubItem'
+            - $ref: '#/components/schemas/Entry'
+          example:
+            {}
+    TimelineSubItem:
+      properties:
+        type:
+          type: string
+          enum:
+            - vacancy
+            - event
+        data:
+          oneOf:
+            - type: array
+              items:
+                $ref: '#/components/schemas/Event'
+            - type: array
+              items:
+                $ref: '#/components/schemas/Vacancy'
+    Vacancy:
+      properties:
+        id:
+          type: number
+        type:
+          type: number
+        title:
+          type: string
+        city:
+          type: string
+        salary:
+          type: string
+        salaryTo:
+          type: number
+        salaryFrom:
+          type: number
+        archived:
+          type: boolean
+        area:
+          type: number
+        areaText:
+          type: string
+        schedule:
+          type: number
+        scheduleText:
+          type: string
+        company:
+          $ref: '#/components/schemas/SubsiteSmall'

@@ -1,0 +1,34 @@
+name: dtf_app
+description: "DTF by Vino — альтернативный клиент DTF"
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.12.0
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.8
+  http: ^1.6.0
+  shared_preferences: ^2.3.3
+  url_launcher: ^6.3.1
+  provider: ^6.1.2
+  cached_network_image: ^3.4.1
+  video_player: ^2.9.2
+  image_picker: ^1.1.2
+  flutter_cache_manager: ^3.4.1
+  path_provider: ^2.1.5
+  google_fonts: ^6.2.1
+  flutter_colorpicker: ^1.1.0
+  http_parser: ^4.1.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/reactions/
