@@ -208,6 +208,30 @@ class DtfApi {
     return r.ok ? {'ok': true, 'comment': r.data} : {'error': r.error};
   }
 
+  // --- Edit own comment — /comment/edit (multipart). Field names confirmed
+  // from the official app: comment_id, entry_id, text, attachments. ---
+  static Future<Map<String, dynamic>> editComment({
+    required int commentId,
+    required int entryId,
+    required String text,
+    List<dynamic>? attachments,
+    required SettingsService settings,
+  }) async {
+    if (!settings.isLoggedIn) return {'error': 'Не авторизован'};
+    final fields = <String, String>{
+      'comment_id': '$commentId',
+      'entry_id': '$entryId',
+      'text': text,
+    };
+    // Preserve existing media on edit (don't wipe it when only text changes).
+    if (attachments != null && attachments.isNotEmpty) {
+      fields['attachments'] = jsonEncode(attachments);
+    }
+    // Same version/namespace as comment/add (v2.31), not the reactions API.
+    final r = await _multipart('comment/edit', settings, fields: fields);
+    return r.ok ? {'ok': true, 'comment': r.data} : {'error': r.error};
+  }
+
   // --- Media upload ---
   static Future<dynamic> extractMediaByUrl(String url, SettingsService settings) async {
     final r = await _postForm('uploader/extract', settings, body: {'url': url});

@@ -71,9 +71,21 @@ class _MainScreenState extends State<MainScreen> {
   void initState() {
     super.initState();
     _pollNotifications();
+    _loadCurrentUser();
     // Refresh the bell badge periodically while the app is open.
     _pollTimer = Timer.periodic(
         const Duration(seconds: 60), (_) => _pollNotifications());
+  }
+
+  // Fetch the logged-in user once so widgets know "who am I" (comment
+  // ownership, edit window). Cached in settings.
+  Future<void> _loadCurrentUser() async {
+    final settings = context.read<SettingsService>();
+    if (!settings.isLoggedIn) return;
+    final me = await DtfApi.getMe(settings);
+    if (mounted && me is Map) {
+      settings.setCurrentUser(me['id'] as int?, me['isPlus'] == true);
+    }
   }
 
   @override

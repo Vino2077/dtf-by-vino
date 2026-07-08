@@ -534,12 +534,96 @@ class _CommentWidgetState extends State<CommentWidget> {
     );
   }
 
+  // Edit dialog for the user's own comment. Sends plain text (the server
+  // re-wraps it); existing media is preserved via attachments.
+  Future<void> _showEditDialog() async {
+    final postId = _postId;
+    if (postId == null) return;
+    final raw = (widget.comment['text'] ?? '').toString();
+    final plain = raw.replaceAll(RegExp(r'<[^>]*>'), '').trim();
+    final ctrl = TextEditingController(text: plain);
+
+    final newText = await showDialog<String>(
+      context: context,
+      builder: (dctx) => AlertDialog(
+        backgroundColor: AppColors.bgCard,
+        title: const Text('Редактировать комментарий',
+            style: TextStyle(color: AppColors.textPrimary, fontSize: 16)),
+        content: TextField(
+          controller: ctrl,
+          autofocus: true,
+          maxLines: null,
+          minLines: 3,
+          style: const TextStyle(color: AppColors.textPrimary),
+          decoration:
+              const InputDecoration(hintText: 'Текст комментария...'),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dctx),
+            child: const Text('Отмена'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(dctx, ctrl.text.trim()),
+            child: const Text('Сохранить'),
+          ),
+        ],
+      ),
+    );
+    ctrl.dispose();
+    if (!mounted || newText == null || newText.isEmpty || newText == plain) {
+      return;
+    }
+
+    final settings = context.read<SettingsService>();
+    final result = await DtfApi.editComment(
+      commentId: _commentId,
+      entryId: postId,
+      text: newText,
+      attachments: widget.comment['media'] as List?,
+      settings: settings,
+    );
+    if (!mounted) return;
+    if (result['ok'] == true) {
+      setState(() {
+        final updated = result['comment'];
+        widget.comment['text'] = (updated is Map && updated['text'] != null)
+            ? updated['text']
+            : '<p>$newText</p>';
+        widget.comment['isEdited'] = true;
+      });
+      _toast('Комментарий изменён');
+    } else {
+      _toast('Не удалось: ${result['error'] ?? 'ошибка'}');
+    }
+  }
+
+  // I own this comment (its author is the logged-in user).
+  bool get _isMyComment {
+    final settings = context.read<SettingsService>();
+    final authorId = widget.comment['author']?['id'] as int?;
+    return settings.myUserId != null && settings.myUserId == authorId;
+  }
+
+  // Editing is allowed for a limited time after posting: 1 hour with Plus,
+  // 1 minute otherwise (same rule as the official app / site).
+  bool get _canEditNow {
+    if (!_isMyComment) return false;
+    final date = widget.comment['date'];
+    if (date is! int) return false;
+    final settings = context.read<SettingsService>();
+    final ageSec = DateTime.now().millisecondsSinceEpoch ~/ 1000 - date;
+    final windowSec = settings.myIsPlus ? 3600 : 60;
+    return ageSec >= 0 && ageSec < windowSec;
+  }
+
   void _showMenu(BuildContext ctx, dynamic author) {
     final settings = ctx.read<SettingsService>();
     final authorId = author?['id'] as int?;
     final authorName = author?['name'] ?? '';
     final currentNote =
         authorId != null ? settings.userNotes[authorId] : null;
+    final canEdit = _canEditNow;
 
     showModalBottomSheet(
       context: ctx,
@@ -548,6 +632,17 @@ class _CommentWidgetState extends State<CommentWidget> {
           mainAxisSize: MainAxisSize.min,
           children: [
             const SizedBox(height: 12),
+            if (canEdit)
+              ListTile(
+                leading: const Icon(Icons.edit_outlined,
+                    color: AppColors.textPrimary),
+                title: const Text('Редактировать комментарий',
+                    style: TextStyle(color: AppColors.textPrimary)),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _showEditDialog();
+                },
+              ),
             ListTile(
               leading: const Icon(Icons.add_reaction_outlined,
                   color: AppColors.textPrimary),

@@ -59,6 +59,19 @@ class SettingsService extends ChangeNotifier {
     notifyListeners();
   }
 
+  // Current user identity, fetched once from subsite/me (via main.dart). Used
+  // to decide comment ownership and the edit window (Plus = 1h, else 1min).
+  int? _myUserId;
+  bool _myIsPlus = false;
+  int? get myUserId => _myUserId;
+  bool get myIsPlus => _myIsPlus;
+  void setCurrentUser(int? id, bool isPlus) {
+    if (id == _myUserId && isPlus == _myIsPlus) return;
+    _myUserId = id;
+    _myIsPlus = isPlus;
+    notifyListeners();
+  }
+
   static Future<SettingsService> load() async {
     final svc = SettingsService();
     await svc._init();
