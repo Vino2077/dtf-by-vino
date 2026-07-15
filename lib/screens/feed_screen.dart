@@ -19,12 +19,12 @@ class FeedScreen extends StatefulWidget {
 class _FeedScreenState extends State<FeedScreen> with SingleTickerProviderStateMixin {
   late TabController _tabController;
 
-  // (feedType, fullLabel, shortLabel)
+  // (feedType, fullLabel, shortLabel) — order matches the Figma redesign.
   final _tabs = [
     ('popular',   'Популярное', 'Топ'),
     ('new',       'Свежее',     'Св.'),
-    ('editorial', 'Новости',    'Нов.'),
     ('my',        'Моя лента',  'Моя'),
+    ('editorial', 'Новости',    'Нов.'),
   ];
 
   @override
@@ -43,20 +43,8 @@ class _FeedScreenState extends State<FeedScreen> with SingleTickerProviderStateM
     super.dispose();
   }
 
-  void _showFilterInfo() {
-    final settings = context.read<SettingsService>();
-    final msg = settings.filterKeywords.isEmpty
-        ? 'Нет активных фильтров. Настрой в Профиль → Настройки'
-        : 'Фильтры: ${settings.filterKeywords.join(', ')}';
-    ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: Text(msg)));
-  }
-
   @override
   Widget build(BuildContext context) {
-    final hasFilters = context.select<SettingsService, bool>(
-        (s) => s.filterKeywords.isNotEmpty);
-    final accent = Theme.of(context).colorScheme.primary;
     final activeIndex = _tabController.index;
 
     return Scaffold(
@@ -65,28 +53,20 @@ class _FeedScreenState extends State<FeedScreen> with SingleTickerProviderStateM
         bottom: false,
         child: Column(
           children: [
-            Container(
-              color: AppColors.bgDeep,
-              child: Row(children: [
-                Expanded(
-                  child: TabBar(
-                    controller: _tabController,
-                    tabs: _tabs.asMap().entries.map((e) {
-                      final selected = e.key == activeIndex;
-                      // Selected tab shows full name; others show short abbreviation.
-                      return Tab(text: selected ? e.value.$2 : e.value.$3);
-                    }).toList(),
-                  ),
-                ),
-                IconButton(
-                  icon: Icon(
-                    Icons.filter_list,
-                    color: hasFilters ? accent : AppColors.textMuted,
-                    size: 22,
-                  ),
-                  onPressed: _showFilterInfo,
-                ),
-              ]),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+              child: TabBar(
+                controller: _tabController,
+                isScrollable: true,
+                tabAlignment: TabAlignment.start,
+                padding: EdgeInsets.zero,
+                labelPadding: const EdgeInsets.symmetric(horizontal: 6),
+                tabs: _tabs.asMap().entries.map((e) {
+                  final selected = e.key == activeIndex;
+                  // Selected tab shows full name; others show short abbreviation.
+                  return Tab(text: selected ? e.value.$2 : e.value.$3);
+                }).toList(),
+              ),
             ),
             Expanded(
               child: TabBarView(

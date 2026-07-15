@@ -18,8 +18,9 @@ class SettingsService extends ChangeNotifier {
   static const _kBgDim = 'bg_dim';
   static const _kBlackTheme = 'black_theme';
   static const _kReactionUsage = 'reaction_usage';
+  static const _kFavoriteSubsites = 'favorite_subsites';
 
-  static const _defaultAccent = 0xFF4FC3F7; // DTF blue
+  static const _defaultAccent = 0xFF5B82F2; // DTF blue (redesign accent)
 
   bool showDeletedComments = true;
   bool autoCollapseViewed = false;
@@ -28,6 +29,8 @@ class SettingsService extends ChangeNotifier {
   List<String> filterKeywords = [];
   Map<int, String> userNotes = {};
   Set<int> viewedPostIds = {};
+  // Subsite ids the user pinned as favorites in the drawer (starred → top).
+  Set<int> favoriteSubsites = {};
   // How many times each reaction id has been used, for "most used first"
   // ordering in the reaction picker.
   Map<int, int> reactionUsage = {};
@@ -110,6 +113,12 @@ class SettingsService extends ChangeNotifier {
       final raw = jsonDecode(usageJson) as Map;
       reactionUsage = raw.map(
           (k, v) => MapEntry(int.parse(k.toString()), (v as num).toInt()));
+    }
+
+    final favJson = prefs.getString(_kFavoriteSubsites);
+    if (favJson != null) {
+      favoriteSubsites = Set<int>.from(
+          (jsonDecode(favJson) as List).map((e) => int.parse(e.toString())));
     }
 
     _accentColor = prefs.getInt(_kAccentColor) ?? _defaultAccent;
@@ -231,6 +240,18 @@ class SettingsService extends ChangeNotifier {
     }
     final toSave = userNotes.map((k, v) => MapEntry(k.toString(), v));
     await _prefs((p) => p.setString(_kUserNotes, jsonEncode(toSave)));
+  }
+
+  bool isFavoriteSubsite(int id) => favoriteSubsites.contains(id);
+
+  Future<void> toggleFavoriteSubsite(int id) async {
+    if (favoriteSubsites.contains(id)) {
+      favoriteSubsites = {...favoriteSubsites}..remove(id);
+    } else {
+      favoriteSubsites = {...favoriteSubsites, id};
+    }
+    await _prefs(
+        (p) => p.setString(_kFavoriteSubsites, jsonEncode(favoriteSubsites.toList())));
   }
 
   Future<void> markViewed(int postId) async {

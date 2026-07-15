@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../api/dtf_api.dart';
@@ -285,8 +286,8 @@ class _PostCardState extends State<PostCard> {
                           color: isViewed
                               ? AppColors.textSecondary
                               : AppColors.textPrimary,
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
+                          fontSize: 16,
+                          fontWeight: FontWeight.w700,
                           height: 1.3,
                         ),
                         children: [
@@ -408,21 +409,21 @@ class _PostCardState extends State<PostCard> {
                                   fontSize: 13)),
                         ]),
                       ),
+                      const SizedBox(width: 16),
+                      GestureDetector(
+                        onTap: () => _sharePost(context),
+                        behavior: HitTestBehavior.opaque,
+                        child: const Icon(Icons.share_outlined,
+                            size: 16, color: AppColors.textMuted),
+                      ),
                       const Spacer(),
-                      if ((counters?['online'] ?? 0) > 0) ...[
-                        Container(
-                          width: 7,
-                          height: 7,
-                          decoration: const BoxDecoration(
-                            color: AppColors.online,
-                            shape: BoxShape.circle,
-                          ),
-                        ),
-                        const SizedBox(width: 4),
-                        Text('${counters?['online'] ?? 0}',
+                      if ((counters?['hits'] ?? 0) > 0) ...[
+                        Text(_fmtCount(counters?['hits']),
                             style: const TextStyle(
-                                color: AppColors.textMuted,
-                                fontSize: 13)),
+                                color: AppColors.textMuted, fontSize: 13)),
+                        const SizedBox(width: 4),
+                        const Icon(Icons.remove_red_eye_outlined,
+                            size: 15, color: AppColors.textMuted),
                       ],
                     ]),
                     if (_topComment != null) ...[
@@ -452,6 +453,14 @@ class _PostCardState extends State<PostCard> {
           ),   // Column
         ),     // GlassCard
     );         // GestureDetector
+  }
+
+  void _sharePost(BuildContext context) {
+    final postId = widget.post['id'];
+    final url = (widget.post['url'] as String?) ?? 'https://dtf.ru/$postId';
+    Clipboard.setData(ClipboardData(text: url));
+    ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Ссылка скопирована')));
   }
 
   void _showPostMenu(BuildContext context) {
@@ -556,6 +565,14 @@ class _PostCardState extends State<PostCard> {
       ),
     );
   }
+}
+
+/// Compact number: 1234 → "1.2K", 1200000 → "1.2M".
+String _fmtCount(dynamic n) {
+  final v = (n is num) ? n.toInt() : int.tryParse('$n') ?? 0;
+  if (v >= 1000000) return '${(v / 1000000).toStringAsFixed(1)}M';
+  if (v >= 1000) return '${(v / 1000).toStringAsFixed(1)}K';
+  return '$v';
 }
 
 /// Most-popular comment shown under a high-reaction post in the feed:

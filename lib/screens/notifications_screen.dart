@@ -140,15 +140,26 @@ class _NotificationTile extends StatelessWidget {
 
   String get _type => (item['type'] ?? _d['type'] ?? '').toString();
 
-  IconData _icon() {
+  IconData _iconData() {
     final type = _type.toLowerCase();
-    if (type.contains('comment') || type.contains('reply')) return Icons.chat_bubble_outline;
+    if (type.contains('comment') || type.contains('reply')) return Icons.chat_bubble;
     if (type.contains('like') || type.contains('vote') || type.contains('react')) {
-      return Icons.favorite_outline;
+      return Icons.favorite;
     }
     if (type.contains('mention')) return Icons.alternate_email;
-    if (type.contains('subscrib')) return Icons.person_add_alt;
-    return Icons.notifications_none;
+    if (type.contains('subscrib')) return Icons.person;
+    return Icons.notifications;
+  }
+
+  // Type-colored badge, matching the Figma "Notification" screen:
+  // blue = comment/reply, red = reaction, green = subscription.
+  Color _badgeColor() {
+    final type = _type.toLowerCase();
+    if (type.contains('like') || type.contains('vote') || type.contains('react')) {
+      return AppColors.danger; // red
+    }
+    if (type.contains('subscrib')) return AppColors.online; // green
+    return const Color(0xFF4A90E2); // blue (comments / default)
   }
 
   // ── Robust extraction (the API shape varies, so search the whole item) ──
@@ -327,8 +338,10 @@ class _NotificationTile extends StatelessWidget {
       spans.add(TextSpan(text: _plainFallback()));
     }
 
-    return ListTile(
-      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+    return GlassCard(
+      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+      child: ListTile(
+      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       leading: Stack(
         clipBehavior: Clip.none,
         children: [
@@ -346,15 +359,14 @@ class _NotificationTile extends StatelessWidget {
           Positioned(
             bottom: -2,
             right: -2,
-            child: Builder(builder: (ctx) {
-              final accent = Theme.of(ctx).colorScheme.primary;
-              return Container(
-                padding: const EdgeInsets.all(3),
-                decoration: const BoxDecoration(
-                    color: AppColors.bgCard, shape: BoxShape.circle),
-                child: Icon(_icon(), size: 13, color: accent),
-              );
-            }),
+            child: Container(
+              padding: const EdgeInsets.all(3),
+              decoration: BoxDecoration(
+                  color: _badgeColor(),
+                  shape: BoxShape.circle,
+                  border: Border.all(color: AppColors.bgCard, width: 1.5)),
+              child: Icon(_iconData(), size: 11, color: Colors.white),
+            ),
           ),
         ],
       ),
@@ -396,6 +408,7 @@ class _NotificationTile extends StatelessWidget {
               }
             }
           : null,
+    ),
     );
   }
 

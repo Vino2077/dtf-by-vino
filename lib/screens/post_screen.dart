@@ -495,7 +495,7 @@ class _PostScreenState extends State<PostScreen> {
               onPressed: _fetchPost,
               style: ElevatedButton.styleFrom(
                 backgroundColor: Theme.of(context).colorScheme.primary,
-                foregroundColor: Colors.black,
+                foregroundColor: Colors.white,
               ),
               child: const Text('Повторить'),
             ),

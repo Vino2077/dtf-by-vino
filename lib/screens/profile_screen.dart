@@ -120,7 +120,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           onPressed: _goLogin,
                           style: ElevatedButton.styleFrom(
                             backgroundColor: accent,
-                            foregroundColor: Colors.black,
+                            foregroundColor: Colors.white,
                             minimumSize: const Size(200, 48),
                           ),
                           child: const Text('Войти',
@@ -249,7 +249,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
               margin: const EdgeInsets.symmetric(horizontal: 12),
               decoration: glassCardDecoration(),
               child: ClipRRect(
-                borderRadius: BorderRadius.circular(20),
+                borderRadius: BorderRadius.circular(AppRadius.card),
                 child: Column(
                 children: [
                   ...menuItems.map((item) => ListTile(
@@ -271,7 +271,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
               margin: const EdgeInsets.symmetric(horizontal: 12),
               decoration: glassCardDecoration(),
               child: ClipRRect(
-                borderRadius: BorderRadius.circular(20),
+                borderRadius: BorderRadius.circular(AppRadius.card),
                 child: Column(
                 children: [
                   ListTile(

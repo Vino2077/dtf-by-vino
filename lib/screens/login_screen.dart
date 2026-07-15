@@ -116,7 +116,7 @@ class _LoginScreenState extends State<LoginScreen> {
               },
               style: ElevatedButton.styleFrom(
                 backgroundColor: Theme.of(context).colorScheme.primary,
-                foregroundColor: Colors.black,
+                foregroundColor: Colors.white,
                 minimumSize: const Size(double.infinity, 44),
               ),
               child: const Text('Войти'),
@@ -192,13 +192,13 @@ class _LoginScreenState extends State<LoginScreen> {
                 onPressed: _loading ? null : _submit,
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Theme.of(context).colorScheme.primary,
-                  foregroundColor: Colors.black,
+                  foregroundColor: Colors.white,
                   minimumSize: const Size(double.infinity, 48),
                 ),
                 child: _loading
                     ? const SizedBox(
                         width: 22, height: 22,
-                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.black))
+                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
                     : const Text('Войти'),
               ),
               const SizedBox(height: 16),

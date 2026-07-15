@@ -175,7 +175,7 @@ class _UserProfileScreenState extends State<UserProfileScreen> with SingleTicker
           SliverAppBar(
             backgroundColor: AppColors.bgCard,
             pinned: true,
-            expandedHeight: _subsite?['cover']?['data']?['uuid'] != null ? 140 : 0,
+            expandedHeight: _subsite?['cover']?['data']?['uuid'] != null ? 200 : 0,
             leading: IconButton(
               icon: const Icon(Icons.arrow_back, color: Colors.white),
               onPressed: () => Navigator.pop(context),
@@ -203,7 +203,7 @@ class _UserProfileScreenState extends State<UserProfileScreen> with SingleTicker
                 controller: _tabController,
                 labelStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
                 tabs: const [
-                  Tab(text: 'Записи'),
+                  Tab(text: 'Посты'),
                   Tab(text: 'Комментарии'),
                   Tab(text: 'Инфо'),
                 ],
@@ -231,105 +231,136 @@ class _UserProfileScreenState extends State<UserProfileScreen> with SingleTicker
       );
     }
     final sub = _subsite;
-    final counters = sub?['counters'];
+    final accent = Theme.of(context).colorScheme.primary;
+    final rating = sub?['rating'];
     return Container(
-      color: AppColors.bgCard,
+      color: AppColors.bgDeep,
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(children: [
-            Avatar(
-              uuid: sub?['avatar']?['data']?['uuid'] ?? widget.initialAvatar,
-              size: 64,
-              animated: sub?['avatar']?['data']?['type'] == 'gif',
-            ),
-            const SizedBox(width: 16),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(children: [
-                    Flexible(
-                      child: Text(
-                        sub?['name'] ?? widget.initialName ?? '',
-                        style: const TextStyle(
-                            color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
-                      ),
-                    ),
-                    AuthorBadge(author: sub, size: 16),
-                    if (sub?['isVerified'] == true) ...[
-                      const SizedBox(width: 4),
-                      Icon(Icons.verified, color: Theme.of(context).colorScheme.primary, size: 16),
-                    ],
-                  ]),
-                  if (sub?['rating'] != null)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 4),
-                      child: Text('Рейтинг: ${sub['rating']}',
-                          style: const TextStyle(color: Colors.grey, fontSize: 13)),
-                    ),
-                ],
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Avatar(
+                uuid: sub?['avatar']?['data']?['uuid'] ?? widget.initialAvatar,
+                size: 88,
+                animated: sub?['avatar']?['data']?['type'] == 'gif',
               ),
-            ),
-          ]),
-          if (sub?['description'] != null && (sub['description'] as String).isNotEmpty) ...[
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(children: [
+                      Flexible(
+                        child: Text(
+                          sub?['name'] ?? widget.initialName ?? '',
+                          style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 26,
+                              fontWeight: FontWeight.w700),
+                        ),
+                      ),
+                      AuthorBadge(author: sub, size: 18),
+                      if (sub?['isVerified'] == true) ...[
+                        const SizedBox(width: 4),
+                        Icon(Icons.verified, color: accent, size: 18),
+                      ],
+                    ]),
+                    if (rating != null)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 6),
+                        child: Row(children: [
+                          Icon(Icons.trending_up, color: accent, size: 18),
+                          const SizedBox(width: 5),
+                          Text(_fmtCount(rating),
+                              style: TextStyle(
+                                  color: accent,
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w600)),
+                        ]),
+                      ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          _buildActionRow(),
+          if (sub?['description'] != null &&
+              (sub['description'] as String).isNotEmpty) ...[
             const SizedBox(height: 12),
             LinkifiedText(
               sub['description'] as String,
-              style: const TextStyle(color: Color(0xFFCCCCCC), fontSize: 14, height: 1.4),
+              style: const TextStyle(
+                  color: AppColors.textSecondary, fontSize: 14, height: 1.4),
             ),
           ],
-          const SizedBox(height: 14),
-          Row(children: [
-            _stat('${counters?['entries'] ?? 0}', 'записей'),
-            const SizedBox(width: 20),
-            _stat('${counters?['comments'] ?? 0}', 'комментов'),
-            const SizedBox(width: 20),
-            _stat('${counters?['subscribers'] ?? 0}', 'подписчиков'),
-          ]),
-          const SizedBox(height: 14),
-          _buildSubscribeButton(),
         ],
       ),
     );
   }
 
-  Widget _buildSubscribeButton() {
+  Widget _buildActionRow() {
     final isFrozen = _subsite?['isFrozen'] == true;
-    return SizedBox(
-      width: double.infinity,
-      child: ElevatedButton(
-        onPressed: _subscribing ? null : _toggleSubscribe,
-        style: ElevatedButton.styleFrom(
-          backgroundColor: _isSubscribed ? AppColors.bgElevated : Theme.of(context).colorScheme.primary,
-          foregroundColor: _isSubscribed ? AppColors.textPrimary : Colors.black,
-          minimumSize: const Size(double.infinity, 42),
+    final accent = Theme.of(context).colorScheme.primary;
+    return Row(children: [
+      Expanded(
+        child: ElevatedButton(
+          onPressed: _subscribing ? null : _toggleSubscribe,
+          style: ElevatedButton.styleFrom(
+            backgroundColor:
+                _isSubscribed ? AppColors.bgElevated : accent,
+            foregroundColor: Colors.white,
+            minimumSize: const Size(0, 48),
+          ),
+          child: _subscribing
+              ? const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : Text(
+                  isFrozen
+                      ? (_isSubscribed ? 'Отписаться' : 'Подписаться')
+                      : (_isSubscribed ? 'Вы подписаны' : 'Подписаться'),
+                  style: const TextStyle(fontWeight: FontWeight.w600),
+                ),
         ),
-        child: _subscribing
-            ? const SizedBox(
-                width: 18, height: 18,
-                child: CircularProgressIndicator(strokeWidth: 2),
-              )
-            : Text(
-                isFrozen
-                    ? (_isSubscribed ? 'Отписаться (аккаунт заморожен)' : 'Подписаться')
-                    : (_isSubscribed ? 'Вы подписаны' : 'Подписаться'),
-                style: const TextStyle(fontWeight: FontWeight.bold),
-              ),
+      ),
+      const SizedBox(width: 10),
+      _circleAction(Icons.card_giftcard, 'Подарки пока недоступны'),
+      const SizedBox(width: 10),
+      _circleAction(Icons.currency_ruble, 'Донаты пока недоступны'),
+      const SizedBox(width: 10),
+      _circleAction(Icons.chat_bubble_outline, 'Чаты скоро появятся'),
+    ]);
+  }
+
+  // Secondary circular buttons next to "Подписаться". The underlying features
+  // (gift / donate / DM) aren't built yet, so they surface a "soon" toast.
+  Widget _circleAction(IconData icon, String soonMsg) {
+    return GestureDetector(
+      onTap: () => ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(soonMsg))),
+      child: Container(
+        width: 48,
+        height: 48,
+        decoration: BoxDecoration(
+          color: AppColors.bgElevated,
+          borderRadius: BorderRadius.circular(AppRadius.card),
+        ),
+        child: Icon(icon, color: AppColors.textSecondary, size: 22),
       ),
     );
   }
 
-  Widget _stat(String value, String label) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(value,
-            style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
-        Text(label, style: const TextStyle(color: Colors.grey, fontSize: 12)),
-      ],
-    );
+  String _fmtCount(dynamic n) {
+    final v = (n is num) ? n.toInt() : int.tryParse('$n') ?? 0;
+    if (v >= 1000000) return '${(v / 1000000).toStringAsFixed(1)}M';
+    if (v >= 1000) return '${(v / 1000).toStringAsFixed(1)}k';
+    return '$v';
   }
 
   Widget _buildPostsTab() {
@@ -393,7 +424,7 @@ class _UserProfileScreenState extends State<UserProfileScreen> with SingleTicker
         child: Text(
           label,
           style: TextStyle(
-            color: active ? Colors.black : Colors.grey,
+            color: active ? Colors.white : Colors.grey,
             fontSize: 13,
             fontWeight: active ? FontWeight.bold : FontWeight.normal,
           ),
