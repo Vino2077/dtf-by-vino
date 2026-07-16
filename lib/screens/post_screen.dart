@@ -99,13 +99,27 @@ class _PostScreenState extends State<PostScreen> {
   Future<void> _fetchComments() async {
     final settings = context.read<SettingsService>();
     try {
-      final list = await DtfApi.getComments(widget.postId, settings, sorting: _commentSort);
+      // Coming from a notification/search → load a wider window so the target
+      // comment is more likely to be among the loaded set (it can't be fetched
+      // by id — the API only returns pages of a post's comments).
+      final list = await DtfApi.getComments(widget.postId, settings,
+          sorting: _commentSort,
+          count: widget.scrollToCommentId != null ? 500 : 200);
       if (!mounted) return;
       setState(() { _comments = list; _loadingComments = false; });
       // Came from a notification, or tapped "comments" in the feed → jump down once.
       if ((widget.scrollToCommentId != null || widget.openToComments) && !_didScrollToComments) {
         _didScrollToComments = true;
-        WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToComments());
+        // If the target is a deep reply that wasn't in the initial load, pull
+        // in its branch first so scroll-to can actually reach it.
+        if (widget.scrollToCommentId != null &&
+            !_comments.any((c) => c['id'] == widget.scrollToCommentId)) {
+          await _ensureTargetLoaded(widget.scrollToCommentId!);
+        }
+        if (!mounted) return;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          _scrollToComments();
+        });
       }
       _enrichWithArchive(); // restore deleted text + edit history in background
     } catch (_) {
@@ -169,18 +183,67 @@ class _PostScreenState extends State<PostScreen> {
     return changed;
   }
 
-  void _scrollToComments() {
-    // Prefer the exact target comment (from a notification / search); fall back
-    // to the comments-section header if that comment isn't in the loaded tree.
-    final target = widget.scrollToCommentId != null
-        ? _targetCommentKey.currentContext
-        : null;
-    final ctx = target ?? _commentsKey.currentContext;
-    if (ctx != null) {
-      Scrollable.ensureVisible(ctx,
-          duration: const Duration(milliseconds: 400),
-          curve: Curves.easeOut,
-          alignment: 0.1);
+  /// Scrolls down to the target comment (from a notification / search) or, when
+  /// there's no specific target, to the comments-section header.
+  ///
+  /// The post body + comments live in a lazy [CustomScrollView], so slivers
+  /// below the viewport aren't built yet and their [GlobalKey] context is null.
+  /// A single `ensureVisible` therefore did nothing (it stayed at the top of the
+  /// post). Here we step the scroll down until the target sliver gets built and
+  /// its context appears, then center it.
+  Future<void> _scrollToComments() async {
+    final wantTarget = widget.scrollToCommentId != null;
+
+    for (var attempt = 0; attempt < 30; attempt++) {
+      if (!mounted || !_scrollController.hasClients) return;
+
+      // If the target comment is already built, centre it and we're done.
+      final targetCtx = wantTarget ? _targetCommentKey.currentContext : null;
+      if (targetCtx != null) {
+        await Scrollable.ensureVisible(targetCtx,
+            duration: const Duration(milliseconds: 350),
+            curve: Curves.easeOut,
+            alignment: 0.15);
+        return;
+      }
+
+      // As soon as the comments header is built, jump to it. The target
+      // branch is promoted to the top of the list, so it renders right below
+      // — no need to crawl through every comment (that caused the old "scroll
+      // for 3s then snap back to the comments start" behaviour).
+      final headerCtx = _commentsKey.currentContext;
+      if (headerCtx != null) {
+        await Scrollable.ensureVisible(headerCtx,
+            duration: const Duration(milliseconds: 250),
+            curve: Curves.easeOut,
+            alignment: 0.0);
+        if (!wantTarget) return;
+        // Give the promoted target a few frames to build, then centre it.
+        for (var t = 0; t < 8; t++) {
+          if (!mounted) return;
+          await Future.delayed(const Duration(milliseconds: 50));
+          final tc = _targetCommentKey.currentContext;
+          if (tc != null) {
+            await Scrollable.ensureVisible(tc,
+                duration: const Duration(milliseconds: 300),
+                curve: Curves.easeOut,
+                alignment: 0.15);
+            return;
+          }
+        }
+        // Target isn't in the loaded set — stay at the comments start rather
+        // than scrolling away to the bottom.
+        return;
+      }
+
+      // Comments section not built yet — advance toward it.
+      final pos = _scrollController.position;
+      final next = (pos.pixels + pos.viewportDimension * 1.5)
+          .clamp(0.0, pos.maxScrollExtent);
+      if (next <= pos.pixels + 1) return; // nothing more to scroll
+      await _scrollController.animateTo(next,
+          duration: const Duration(milliseconds: 90), curve: Curves.easeOut);
+      await Future.delayed(const Duration(milliseconds: 30));
     }
   }
 
@@ -199,14 +262,86 @@ class _PostScreenState extends State<PostScreen> {
     final branch = await DtfApi.getThread(widget.postId, threadId, settings);
     if (!mounted) return;
     setState(() {
-      // Merge in any comments we don't already have.
-      final existing = _comments.map((c) => c['id']).toSet();
-      for (final c in branch) {
-        if (!existing.contains(c['id'])) _comments.add(c);
-      }
+      _mergeComments(branch);
       _loadingThreads.remove(threadId);
       _applyArchive(_comments); // restore any deleted comments in this branch
     });
+  }
+
+  /// Adds any comments from [incoming] we don't already have. Returns true if
+  /// at least one new comment was added.
+  bool _mergeComments(List<dynamic> incoming) {
+    final existing = {
+      for (final c in _comments)
+        if (c['id'] is int) c['id'] as int
+    };
+    var added = false;
+    for (final c in incoming) {
+      final id = c['id'];
+      if (id is int && !existing.contains(id)) {
+        _comments.add(c);
+        existing.add(id);
+        added = true;
+      }
+    }
+    return added;
+  }
+
+  // Threads already bulk-loaded while hunting for a notification's target
+  // comment, so we don't fetch them twice.
+  final Set<String> _autoLoadedThreads = {};
+
+  /// The main /comments call only returns levels 0-1, so a comment linked from
+  /// a notification is often a deeper reply that isn't loaded yet (it sits
+  /// behind a "show N replies" button — the user sees it as "collapsed"). Here
+  /// we load the branches that still have unloaded replies (each identified by
+  /// its shared [threadId]) until the target comment appears, so scroll-to can
+  /// reach it. Bounded, and stops as soon as the target is found.
+  Future<bool> _ensureTargetLoaded(int targetId) async {
+    if (_comments.any((c) => c['id'] == targetId)) return true;
+    final settings = context.read<SettingsService>();
+
+    // Loaded direct children per comment id (to tell which branches still
+    // have replies we haven't fetched).
+    final loadedChildren = <int, int>{};
+    for (final c in _comments) {
+      final rt = (c['replyTo'] ?? 0) as int;
+      if (rt != 0) loadedChildren[rt] = (loadedChildren[rt] ?? 0) + 1;
+    }
+    // Distinct thread ids of branches with still-unloaded replies.
+    final threadIds = <String>{};
+    for (final c in _comments) {
+      final tid = c['threadId']?.toString();
+      if (tid == null || tid.isEmpty || _autoLoadedThreads.contains(tid)) {
+        continue;
+      }
+      final rc = (c['replyCount'] ?? 0) as int;
+      final loaded = loadedChildren[c['id']] ?? 0;
+      if (rc > loaded) threadIds.add(tid);
+    }
+    if (threadIds.isEmpty) return false;
+
+    const cap = 40; // safety bound for pathologically large threads
+    const batch = 8;
+    final list = threadIds.take(cap).toList();
+    for (var i = 0; i < list.length; i += batch) {
+      if (!mounted) return false;
+      final slice = list.skip(i).take(batch).toList();
+      _autoLoadedThreads.addAll(slice);
+      final results = await Future.wait(
+          slice.map((t) => DtfApi.getThread(widget.postId, t, settings)));
+      if (!mounted) return false;
+      var added = false;
+      for (final branch in results) {
+        if (_mergeComments(branch)) added = true;
+      }
+      if (added) {
+        _applyArchive(_comments);
+        setState(() {});
+      }
+      if (_comments.any((c) => c['id'] == targetId)) return true;
+    }
+    return _comments.any((c) => c['id'] == targetId);
   }
 
   void _startReply(int commentId, String name) {

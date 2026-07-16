@@ -13,6 +13,7 @@ import 'screens/search_screen.dart';
 import 'screens/chats_screen.dart';
 import 'screens/notifications_screen.dart';
 import 'screens/profile_screen.dart';
+import 'screens/editor_screen.dart';
 
 final navigatorKey = GlobalKey<NavigatorState>();
 
@@ -57,18 +58,19 @@ class MainScreen extends StatefulWidget {
 
 class _MainScreenState extends State<MainScreen> {
   final _scaffoldKey = GlobalKey<ScaffoldState>();
+  final _feedKey = GlobalKey<FeedScreenState>();
   int _index = 0;
   Timer? _pollTimer;
 
   // Bottom-nav tab index that holds the notifications screen.
   static const _notificationsTab = 3;
 
-  static const _screens = [
-    FeedScreen(),
-    SearchScreen(),
-    ChatsScreen(),
-    NotificationsScreen(),
-    ProfileScreen(),
+  late final List<Widget> _screens = [
+    FeedScreen(key: _feedKey),
+    const SearchScreen(),
+    const ChatsScreen(),
+    const NotificationsScreen(),
+    const ProfileScreen(),
   ];
 
   @override
@@ -104,6 +106,12 @@ class _MainScreenState extends State<MainScreen> {
   }
 
   void _onTapTab(int i) {
+    // Tapping "Главная" while already on the feed scrolls it back to the top
+    // (replaces the old scroll-to-top button).
+    if (i == 0 && _index == 0) {
+      _feedKey.currentState?.scrollActiveToTop();
+      return;
+    }
     if (i == _notificationsTab) {
       context.read<SettingsService>().setNotificationCount(0);
     }
@@ -112,6 +120,7 @@ class _MainScreenState extends State<MainScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final accent = Theme.of(context).colorScheme.primary;
     return Scaffold(
       key: _scaffoldKey,
       extendBody: true,
@@ -121,6 +130,19 @@ class _MainScreenState extends State<MainScreen> {
       body: AppBackground(
         child: IndexedStack(index: _index, children: _screens),
       ),
+      // Compose-post button, shown on the feed.
+      floatingActionButton: _index == 0
+          ? FloatingActionButton(
+              onPressed: () => Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const EditorScreen()),
+              ),
+              backgroundColor: accent,
+              foregroundColor: Colors.white,
+              elevation: 4,
+              child: const Icon(Icons.edit_outlined, size: 24),
+            )
+          : null,
       bottomNavigationBar: _BottomNav(index: _index, onTap: _onTapTab),
     );
   }

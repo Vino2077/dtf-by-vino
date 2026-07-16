@@ -163,11 +163,12 @@ class DtfApi {
     SettingsService settings, {
     int? lastId,
     String sorting = 'hotness',
+    int count = 200,
   }) async {
     final lastParam = lastId != null ? '&lastId=$lastId' : '';
     final firstLoad = lastId == null ? '&firstLoad=true' : '';
     final result = await _get(
-      'comments?contentId=$entryId&sorting=$sorting&count=200$firstLoad$lastParam',
+      'comments?contentId=$entryId&sorting=$sorting&count=$count$firstLoad$lastParam',
       settings, version: ApiConfig.vComments);
     return asList(dig(result, ['items']));
   }

@@ -13,10 +13,10 @@ class FeedScreen extends StatefulWidget {
   const FeedScreen({super.key});
 
   @override
-  State<FeedScreen> createState() => _FeedScreenState();
+  State<FeedScreen> createState() => FeedScreenState();
 }
 
-class _FeedScreenState extends State<FeedScreen> with SingleTickerProviderStateMixin {
+class FeedScreenState extends State<FeedScreen> with SingleTickerProviderStateMixin {
   late TabController _tabController;
 
   // (feedType, fullLabel, shortLabel) — order matches the Figma redesign.
@@ -27,6 +27,11 @@ class _FeedScreenState extends State<FeedScreen> with SingleTickerProviderStateM
     ('editorial', 'Новости',    'Нов.'),
   ];
 
+  // One key per tab so the active feed list can be scrolled to top (e.g. when
+  // the "Главная" nav tab is tapped while already on the feed).
+  late final List<GlobalKey<FeedListState>> _listKeys =
+      List.generate(_tabs.length, (_) => GlobalKey<FeedListState>());
+
   @override
   void initState() {
     super.initState();
@@ -35,6 +40,11 @@ class _FeedScreenState extends State<FeedScreen> with SingleTickerProviderStateM
     _tabController.addListener(() {
       if (!_tabController.indexIsChanging) setState(() {});
     });
+  }
+
+  /// Scrolls the currently-visible feed tab back to the top.
+  void scrollActiveToTop() {
+    _listKeys[_tabController.index].currentState?.scrollToTop();
   }
 
   @override
@@ -72,7 +82,10 @@ class _FeedScreenState extends State<FeedScreen> with SingleTickerProviderStateM
               child: TabBarView(
                 controller: _tabController,
                 children: _tabs
-                    .map((t) => FeedList(feedType: t.$1))
+                    .asMap()
+                    .entries
+                    .map((e) => FeedList(
+                        key: _listKeys[e.key], feedType: e.value.$1))
                     .toList(),
               ),
             ),
@@ -195,10 +208,10 @@ class FeedList extends StatefulWidget {
   const FeedList({super.key, required this.feedType});
 
   @override
-  State<FeedList> createState() => _FeedListState();
+  State<FeedList> createState() => FeedListState();
 }
 
-class _FeedListState extends State<FeedList> with AutomaticKeepAliveClientMixin {
+class FeedListState extends State<FeedList> with AutomaticKeepAliveClientMixin {
   List<dynamic> _posts = [];
   List<dynamic> _editorialPosts = []; // top-4 editorial, shown only in 'popular'
   bool _loading = true;
@@ -206,7 +219,6 @@ class _FeedListState extends State<FeedList> with AutomaticKeepAliveClientMixin 
   int? _lastId;
   int? _lastSortingValue;
   final _scrollController = ScrollController();
-  bool _showTopBtn = false;
 
   @override
   bool get wantKeepAlive => true;
@@ -217,8 +229,6 @@ class _FeedListState extends State<FeedList> with AutomaticKeepAliveClientMixin 
     _scrollController.addListener(() {
       final pos = _scrollController.position;
       if (pos.pixels > pos.maxScrollExtent - 500 && !_loadingMore) _fetchMore();
-      final show = pos.pixels > 400;
-      if (show != _showTopBtn) setState(() => _showTopBtn = show);
     });
     _fetchPosts();
   }
@@ -288,7 +298,10 @@ class _FeedListState extends State<FeedList> with AutomaticKeepAliveClientMixin 
     }
   }
 
-  void _scrollTop() {
+  /// Scrolls this feed list back to the top (invoked from the "Главная" nav
+  /// tab). Safe to call before the list has been laid out.
+  void scrollToTop() {
+    if (!_scrollController.hasClients) return;
     _scrollController.animateTo(0,
         duration: const Duration(milliseconds: 400), curve: Curves.easeOut);
   }
@@ -315,9 +328,7 @@ class _FeedListState extends State<FeedList> with AutomaticKeepAliveClientMixin 
 
     final bottomPad = MediaQuery.of(context).padding.bottom + 86;
 
-    return Stack(
-      children: [
-        RefreshIndicator(
+    return RefreshIndicator(
           onRefresh: _fetchPosts,
           child: _posts.isEmpty
               ? ListView(
@@ -387,19 +398,6 @@ class _FeedListState extends State<FeedList> with AutomaticKeepAliveClientMixin 
                     );
                   },
                 ),
-        ),
-        if (_showTopBtn)
-          Positioned(
-            right: 16,
-            bottom: MediaQuery.of(context).padding.bottom + 96,
-            child: FloatingActionButton.small(
-              onPressed: _scrollTop,
-              backgroundColor: AppColors.bgElevated,
-              child: const Icon(Icons.keyboard_arrow_up,
-                  color: AppColors.textPrimary),
-            ),
-          ),
-      ],
-    );
+        );
   }
 }

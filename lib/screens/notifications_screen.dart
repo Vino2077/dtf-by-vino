@@ -1,4 +1,6 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../api/dtf_api.dart';
 import '../services/settings_service.dart';
@@ -246,27 +248,26 @@ class _NotificationTile extends StatelessWidget {
         if (uri == null || uri.pathSegments.isEmpty) continue;
         final last = uri.pathSegments.last;
         final idm = RegExp(r'^(\d{4,})').firstMatch(last);
-        final c = uri.queryParameters['comment'];
         if (idm != null) {
           postId = int.tryParse(idm.group(1)!);
-          if (c != null) commentId = int.tryParse(c);
+          commentId ??= _commentFromUri(uri);
           if (commentId != null) break;
         }
       }
     }
 
-    // Direct URL field from Notification object (APK-confirmed)
-    if (postId == null) {
+    // The notification's own url is often a comment permalink even when the
+    // post id already came from the HTML title link — so ALWAYS mine it for a
+    // comment id (and for the post id when the HTML didn't supply one). The old
+    // `if (postId == null)` gate skipped it, so the comment id was lost and the
+    // post opened at the top instead of at the comment.
+    {
       final directUrl = item['url'];
       if (directUrl is String && directUrl.isNotEmpty) {
         final uri = Uri.tryParse(directUrl);
         if (uri != null && uri.pathSegments.isNotEmpty) {
-          final id = parsePostUrl(directUrl);
-          if (id != null) {
-            postId = id;
-            final c = uri.queryParameters['comment'];
-            if (c != null) commentId = int.tryParse(c);
-          }
+          postId ??= parsePostUrl(directUrl);
+          commentId ??= _commentFromUri(uri);
         }
       }
     }
@@ -286,7 +287,12 @@ class _NotificationTile extends StatelessWidget {
       d['post_id'], d['content_id'], d['contentId'], d['postId'], d['id'],
       d['content']?['id'], d['entry']?['id'], d['post']?['id'],
     ]);
-    commentId ??= _firstInt([d['comment_id'], d['commentId'], d['comment']?['id']]);
+    commentId ??= _firstInt([
+      d['comment_id'], d['commentId'], d['comment']?['id'],
+      d['reply_id'], d['replyId'], d['reply']?['id'],
+    ]);
+    // Last resort: scan the whole notification object for a comment id.
+    commentId ??= _deepFindCommentId(item);
 
     // No post → maybe it's a profile link (single path segment like id290515).
     if (postId == null) {
@@ -307,6 +313,52 @@ class _NotificationTile extends StatelessWidget {
     for (final c in candidates) {
       if (c is int) return c;
       if (c is String) { final v = int.tryParse(c); if (v != null) return v; }
+    }
+    return null;
+  }
+
+  // A comment id from a URL's `?comment=123` query or `#comment-123` fragment.
+  int? _commentFromUri(Uri uri) {
+    final c = uri.queryParameters['comment'];
+    if (c != null) { final n = int.tryParse(c); if (n != null) return n; }
+    if (uri.fragment.isNotEmpty) {
+      final m = RegExp(r'comment[-_]?(\d+)', caseSensitive: false)
+          .firstMatch(uri.fragment);
+      if (m != null) return int.tryParse(m.group(1)!);
+    }
+    return null;
+  }
+
+  // Best-effort: recursively hunt for a comment id anywhere in the notification
+  // (a `?comment=`/`#comment-`/`comment/123` string, or a comment/reply-id key).
+  int? _deepFindCommentId(dynamic node, [int depth = 0]) {
+    if (depth > 6) return null;
+    if (node is String) {
+      final m = RegExp(r'[?&#]comment[=/_-]?(\d{3,})', caseSensitive: false)
+              .firstMatch(node) ??
+          RegExp(r'comment/(\d{3,})', caseSensitive: false).firstMatch(node);
+      return m != null ? int.tryParse(m.group(1)!) : null;
+    }
+    if (node is Map) {
+      for (final e in node.entries) {
+        final k = e.key.toString().toLowerCase();
+        if (k == 'comment' || k == 'commentid' || k == 'comment_id' ||
+            k == 'reply' || k == 'replyid' || k == 'reply_id') {
+          final v = e.value;
+          if (v is int && v > 0) return v;
+          if (v is String) { final n = int.tryParse(v); if (n != null) return n; }
+          if (v is Map && v['id'] is int) return v['id'] as int;
+        }
+      }
+      for (final v in node.values) {
+        final r = _deepFindCommentId(v, depth + 1);
+        if (r != null) return r;
+      }
+    } else if (node is List) {
+      for (final v in node) {
+        final r = _deepFindCommentId(v, depth + 1);
+        if (r != null) return r;
+      }
     }
     return null;
   }
@@ -389,6 +441,14 @@ class _NotificationTile extends StatelessWidget {
                       color: AppColors.textMuted, fontSize: 12)),
             )
           : null,
+      // Diagnostic: long-press copies the raw notification JSON so its exact
+      // shape can be inspected if comment-id extraction ever misses.
+      onLongPress: () {
+        Clipboard.setData(ClipboardData(text: jsonEncode(item)));
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('JSON уведомления скопирован')),
+        );
+      },
       onTap: (profileId != null || entryId != null)
           ? () {
               if (profileId != null) {
