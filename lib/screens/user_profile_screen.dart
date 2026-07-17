@@ -41,7 +41,7 @@ class _UserProfileScreenState extends State<UserProfileScreen> with SingleTicker
   bool _loadingMorePosts = false;
   String _postSort = 'new'; // 'new' | 'popular'
   int? _postsLastId;
-  int? _postsLastSorting;
+  String? _postsLastSorting;
 
   // Comments tab
   List<dynamic> _comments = [];

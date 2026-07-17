@@ -217,7 +217,7 @@ class FeedListState extends State<FeedList> with AutomaticKeepAliveClientMixin {
   bool _loading = true;
   bool _loadingMore = false;
   int? _lastId;
-  int? _lastSortingValue;
+  String? _lastSortingValue;
   final _scrollController = ScrollController();
 
   @override
@@ -239,7 +239,7 @@ class FeedListState extends State<FeedList> with AutomaticKeepAliveClientMixin {
     super.dispose();
   }
 
-  Future<FeedPage> _loadPage({int? lastId, int? lastSortingValue}) {
+  Future<FeedPage> _loadPage({int? lastId, String? lastSortingValue}) {
     final settings = context.read<SettingsService>();
     if (widget.feedType == 'editorial') {
       return DtfApi.getEditorialFeed(

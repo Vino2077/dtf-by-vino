@@ -11,6 +11,7 @@ class ApiConfig {
   static const vComments = 'v2.10'; // comments tree, reactions (react)
   static const vAssets = 'v2.9';   // reaction image registry
   static const vEditor = 'v2.11';  // editor (POST editor, POST editor/{id}/publish)
+  static const vMessenger = 'v2.1'; // direct messages (/m/channels, /m/messages, /m/send)
 
   // Network behaviour
   static const timeout = Duration(seconds: 20);

@@ -9,7 +9,11 @@ import 'api_config.dart';
 class FeedPage {
   final List<dynamic> items;
   final int? lastId;
-  final int? lastSortingValue;
+  // Opaque pagination cursor. For the "popular" feed it's a fractional score
+  // (e.g. "12668.587636617"), so it must be kept verbatim as a string — parsing
+  // it to an int truncated the score and made pagination skip posts / fall back
+  // to a different (stale) ordering.
+  final String? lastSortingValue;
   const FeedPage(this.items, this.lastId, this.lastSortingValue);
   bool get isEmpty => items.isEmpty;
   static const empty = FeedPage([], null, null);
@@ -122,7 +126,7 @@ class DtfApi {
     return FeedPage(
       _unwrapTimeline(result, includeNews: includeNews),
       asInt(dig(result, ['lastId'])),
-      asInt(dig(result, ['lastSortingValue'])),
+      digString(result, ['lastSortingValue']),
     );
   }
 
@@ -131,7 +135,7 @@ class DtfApi {
     required SettingsService settings,
     required String type, // 'popular' | 'new' | 'my'
     int? lastId,
-    int? lastSortingValue,
+    String? lastSortingValue,
   }) async {
     String path = 'feed?pageName=$type&count=${settings.batchSize}';
     if (type == 'new') path += '&sorting=all'; // 'new' requires a sorting param
@@ -149,7 +153,7 @@ class DtfApi {
   static Future<FeedPage> getEditorialFeed({
     required SettingsService settings,
     int? lastId,
-    int? lastSortingValue,
+    String? lastSortingValue,
   }) async {
     String path = 'search/posts?editorial=true&sorting=date&count=${settings.batchSize}';
     if (lastId != null) path += '&lastId=$lastId';
@@ -316,7 +320,7 @@ class DtfApi {
     SettingsService settings, {
     String sorting = 'new',
     int? lastId,
-    int? lastSortingValue,
+    String? lastSortingValue,
   }) async {
     final apiSort = sorting == 'popular' ? 'hotness' : 'new';
     String path = 'timeline?subsitesIds=$subsiteId&sorting=$apiSort&count=20';
@@ -561,6 +565,55 @@ class DtfApi {
       if (s is Map && s['id'] != (own as Map?)?['id']) out.add(s);
     }
     return out;
+  }
+
+  // ── Messenger (direct messages) — v2.1, base `/m/` ────────────────────────
+  // Reverse-engineered from the DTF web client. Auth via the same X-Device-Token
+  // as the rest of the app (the web uses JWTAuthorization instead).
+
+  /// One page of the user's direct-message channels (dialogs), newest first.
+  static Future<List<dynamic>> getChannels(SettingsService settings,
+      {int page = 1}) async {
+    final result = await _get('m/channels?page=$page', settings,
+        version: ApiConfig.vMessenger);
+    return asList(dig(result, ['channels']));
+  }
+
+  /// Messages of a channel (oldest→newest). [beforeTime] is a message's
+  /// `dtCreated` — pass the oldest loaded one to page older history; '0' = latest.
+  static Future<List<dynamic>> getMessages(int channelId, SettingsService settings,
+      {String beforeTime = '0'}) async {
+    final result = await _get(
+        'm/messages?channelId=$channelId&beforeTime=$beforeTime', settings,
+        version: ApiConfig.vMessenger);
+    return asList(dig(result, ['messages']));
+  }
+
+  /// Sends a text message (optionally a reply to [replyToId]).
+  static Future<ApiResult> sendMessage({
+    required int channelId,
+    required String text,
+    String? replyToId,
+    required SettingsService settings,
+  }) async {
+    final ts = (DateTime.now().millisecondsSinceEpoch / 1000.0).toStringAsFixed(3);
+    final idTmp = DateTime.now().microsecondsSinceEpoch % 1000000000;
+    final body = <String, String>{
+      'channelId': '$channelId',
+      'text': text,
+      'media': '[]',
+      'idTmp': '$idTmp',
+      'ts': ts,
+    };
+    if (replyToId != null && replyToId.isNotEmpty) body['replyToId'] = replyToId;
+    return _postForm('m/send', settings,
+        version: ApiConfig.vMessenger, body: body);
+  }
+
+  /// Marks a channel read (clears its unread badge). Fire-and-forget.
+  static Future<void> markChannelRead(int channelId, SettingsService settings) async {
+    await _postForm('m/markAsRead', settings,
+        version: ApiConfig.vMessenger, body: {'channelId': '$channelId'});
   }
 
   /// Creates a draft via `POST editor`, then (optionally) publishes it.
