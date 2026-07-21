@@ -1,6 +1,16 @@
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
+class AuthStorageException implements Exception {
+  final String message;
+  const AuthStorageException(this.message);
+
+  @override
+  String toString() => message;
+}
 
 class SettingsService extends ChangeNotifier {
   static const _kToken = 'dtf_token';
@@ -19,6 +29,7 @@ class SettingsService extends ChangeNotifier {
   static const _kBlackTheme = 'black_theme';
   static const _kReactionUsage = 'reaction_usage';
   static const _kFavoriteSubsites = 'favorite_subsites';
+  static const _secureStorage = FlutterSecureStorage();
 
   static const _defaultAccent = 0xFF5B82F2; // DTF blue (redesign accent)
 
@@ -42,6 +53,7 @@ class SettingsService extends ChangeNotifier {
   double _bgBlur = 10.0;
   double _bgDim = 0.45;
   String? _token;
+  String? _authStorageError;
 
   String? get bgImagePath => _bgImagePath;
   double get bgBlur => _bgBlur;
@@ -51,6 +63,15 @@ class SettingsService extends ChangeNotifier {
 
   String? get token => _token;
   bool get isLoggedIn => _token != null && _token!.isNotEmpty;
+  String? get authStorageError => _authStorageError;
+
+  /// Web Crypto is unavailable on a regular HTTP origin. Keep the legacy
+  /// SharedPreferences behaviour only for that explicitly unsupported case.
+  static bool get _useInsecureWebStorage {
+    if (!kIsWeb || Uri.base.scheme != 'http') return false;
+    final host = Uri.base.host.toLowerCase();
+    return host != 'localhost' && host != '127.0.0.1' && host != '::1';
+  }
 
   // Unread-notification count for the bell badge. Polled from main.dart (kept
   // here so any widget can react via Provider without a separate service).
@@ -83,7 +104,7 @@ class SettingsService extends ChangeNotifier {
 
   Future<void> _init() async {
     final prefs = await SharedPreferences.getInstance();
-    _token = prefs.getString(_kToken);
+    await _loadToken(prefs);
     showDeletedComments = prefs.getBool(_kShowDeleted) ?? true;
     autoCollapseViewed = prefs.getBool(_kAutoCollapse) ?? false;
     autoExpandComments = prefs.getBool(_kAutoExpandComments) ?? true;
@@ -190,14 +211,103 @@ class SettingsService extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> _loadToken(SharedPreferences prefs) async {
+    final legacyToken = prefs.getString(_kToken);
+
+    if (_useInsecureWebStorage) {
+      _token = legacyToken;
+      return;
+    }
+
+    try {
+      final secureToken = await _secureStorage.read(key: _kToken);
+      if (secureToken != null && secureToken.isNotEmpty) {
+        _token = secureToken;
+        if (legacyToken != null && !await prefs.remove(_kToken)) {
+          _authStorageError =
+              'Не удалось удалить старую небезопасную копию токена.';
+        }
+        return;
+      }
+
+      if (legacyToken == null || legacyToken.isEmpty) return;
+
+      await _secureStorage.write(key: _kToken, value: legacyToken);
+      if (!await prefs.remove(_kToken)) {
+        // Do not silently accept a migration that left the plaintext copy.
+        await _secureStorage.delete(key: _kToken);
+        throw const AuthStorageException(
+            'Не удалось завершить перенос токена в защищённое хранилище.');
+      }
+      _token = legacyToken;
+    } catch (error) {
+      _token = null;
+      _authStorageError = error is AuthStorageException
+          ? error.message
+          : 'Защищённое хранилище авторизации недоступно.';
+    }
+  }
+
   Future<void> saveToken(String token) async {
+    final currentToken = _token;
+    try {
+      if (_useInsecureWebStorage) {
+        final prefs = await SharedPreferences.getInstance();
+        if (!await prefs.setString(_kToken, token)) {
+          throw const AuthStorageException('Не удалось сохранить токен.');
+        }
+      } else {
+        await _secureStorage.write(key: _kToken, value: token);
+        final prefs = await SharedPreferences.getInstance();
+        if (prefs.containsKey(_kToken) && !await prefs.remove(_kToken)) {
+          if (currentToken == null) {
+            await _secureStorage.delete(key: _kToken);
+          } else {
+            await _secureStorage.write(key: _kToken, value: currentToken);
+          }
+          throw const AuthStorageException(
+              'Не удалось удалить старую небезопасную копию токена.');
+        }
+      }
+    } catch (error) {
+      if (error is AuthStorageException) rethrow;
+      throw const AuthStorageException(
+          'Не удалось сохранить токен в защищённом хранилище.');
+    }
+
     _token = token;
-    await _prefs((p) => p.setString(_kToken, token));
+    _authStorageError = null;
+    notifyListeners();
   }
 
   Future<void> clearToken() async {
+    final currentToken = _token;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      if (_useInsecureWebStorage) {
+        if (prefs.containsKey(_kToken) && !await prefs.remove(_kToken)) {
+          throw const AuthStorageException('Не удалось удалить токен.');
+        }
+      } else {
+        await _secureStorage.delete(key: _kToken);
+        if (prefs.containsKey(_kToken) && !await prefs.remove(_kToken)) {
+          // Avoid restoring a leftover legacy token on the next launch.
+          if (currentToken != null) {
+            await _secureStorage.write(key: _kToken, value: currentToken);
+          }
+          throw const AuthStorageException(
+              'Не удалось удалить старую небезопасную копию токена.');
+        }
+      }
+    } catch (error) {
+      if (error is AuthStorageException) rethrow;
+      throw const AuthStorageException(
+          'Не удалось удалить токен из защищённого хранилища.');
+    }
+
     _token = null;
-    await _prefs((p) => p.remove(_kToken));
+    _authStorageError = null;
+    notifyListeners();
   }
 
   Future<void> setShowDeletedComments(bool v) async {
