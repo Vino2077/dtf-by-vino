@@ -3,6 +3,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:video_player/video_player.dart';
 import '../theme.dart';
 import '../util/external_link.dart';
+import '../util/gif_video_controller.dart';
 import '../util/json_safe.dart';
 import '../util/osnova_image.dart';
 
@@ -213,10 +214,14 @@ class _InlineGifVideoState extends State<_InlineGifVideo> {
   }
 
   Future<void> _init() async {
-    final controller =
-        VideoPlayerController.networkUrl(Uri.parse(widget.url));
-    _controller = controller;
+    VideoPlayerController? controller;
     try {
+      controller = await createHostedVideoController(widget.url);
+      if (!mounted) {
+        await controller.dispose();
+        return;
+      }
+      _controller = controller;
       await controller.initialize();
       if (!mounted || controller != _controller) {
         await controller.dispose();
@@ -226,8 +231,7 @@ class _InlineGifVideoState extends State<_InlineGifVideo> {
       await controller.setVolume(0);
       await controller.play();
       if (mounted) setState(() => _ready = true);
-    } catch (_) {
-      if (mounted && controller == _controller) {
+    } catch (_) {      if (mounted && (controller == null || controller == _controller)) {
         setState(() => _failed = true);
       }
     }
@@ -368,17 +372,22 @@ class _FullscreenVideoState extends State<_FullscreenVideo> {
   }
 
   Future<void> _init() async {
+    VideoPlayerController? controller;
     try {
-      final c = VideoPlayerController.networkUrl(Uri.parse(widget.url));
-      _controller = c;
-      await c.initialize();
-      if (!mounted) { c.dispose(); return; }
-      c.setLooping(true);
-      c.setVolume(1);
-      c.play();
-      setState(() => _ready = true);
-    } catch (_) {
-      if (mounted) setState(() => _failed = true);
+      controller = await createHostedVideoController(widget.url);
+      if (!mounted) {
+        await controller.dispose();
+        return;
+      }
+      _controller = controller;
+      await controller.initialize();
+      await controller.setLooping(true);
+      await controller.setVolume(1);
+      await controller.play();
+      if (mounted) setState(() => _ready = true);
+    } catch (_) {      if (mounted && (controller == null || controller == _controller)) {
+        setState(() => _failed = true);
+      }
     }
   }
 
