@@ -1,9 +1,8 @@
-import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
-import '../core/api/result.dart';
 import '../features/comments/data/comments_repository.dart';
+import '../features/comments/presentation/comments_controller.dart';
 import '../models/comment.dart';
 import '../services/settings_service.dart';
 import '../theme.dart';
@@ -37,19 +36,31 @@ class CommentWidget extends StatefulWidget {
 }
 
 class _CommentWidgetState extends State<CommentWidget> {
+  late final CommentsController _controller;
   bool _collapsed = false;
   late Map<String, dynamic> _data;
 
   @override
   void initState() {
     super.initState();
+    _controller = CommentsController(context.read<CommentsRepository>())
+      ..replaceAll([widget.comment]);
     _data = widget.comment.toJson();
   }
 
   @override
   void didUpdateWidget(covariant CommentWidget oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.comment != widget.comment) _data = widget.comment.toJson();
+    if (oldWidget.comment != widget.comment) {
+      _controller.replaceAll([widget.comment]);
+      _data = widget.comment.toJson();
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
   }
 
   int get _commentId => _data['id'] as int? ?? 0;
@@ -60,31 +71,24 @@ class _CommentWidgetState extends State<CommentWidget> {
       _needAuth();
       return;
     }
-    final reactions =
-        (_data['reactions'] as Map?) ?? {'counters': [], 'reactionId': 0};
-    _data['reactions'] = reactions;
-    final snapshot = jsonEncode(reactions);
-    final before = (reactions['reactionId'] as int?) ?? 0;
-    final now = applyReactionToggle(reactions, reactionId);
+    final before = _controller.state.comments.single.reactions.selectedId;
+    final failureVersion = _controller.state.actionFailureVersion;
+    await _controller.toggleReaction(_commentId, reactionId);
+    if (!mounted) return;
+    final state = _controller.state;
+    _data = state.comments.single.toJson();
     setState(() {});
-    final added = now != 0 && now != before;
+    if (state.actionFailureVersion > failureVersion) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Реакция: ${state.actionFailure!.message}')),
+      );
+      return;
+    }
+    final selected = state.comments.single.reactions.selectedId;
+    final added = selected != 0 && selected != before;
     if (added) settings.recordReactionUse(reactionId);
     showReactionToast(context, reactionId, added: added);
-
-    final result = await context.read<CommentsRepository>().setReaction(
-      _commentId,
-      reactionId,
-    );
-    if (!mounted) return;
-    if (result case Failure<void>(:final failure)) {
-      _data['reactions'] = jsonDecode(snapshot);
-      setState(() {});
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Реакция: ${failure.message}')));
-    } else {
-      widget.onReactionChanged?.call();
-    }
+    widget.onReactionChanged?.call();
   }
 
   void _needAuth() {
@@ -132,18 +136,16 @@ class _CommentWidgetState extends State<CommentWidget> {
       return;
     }
     final add = !_isFavorited;
-    // Optimistic: flip locally, revert on failure. type 2 = comment.
-    setState(() => _data['isFavorited'] = add);
-    final result = await context.read<CommentsRepository>().setFavorite(
-      _commentId,
-      value: add,
-    );
+    final failureVersion = _controller.state.actionFailureVersion;
+    await _controller.toggleFavorite(_commentId);
     if (!mounted) return;
-    if (result is Success<void>) {
-      _toast(add ? 'Добавлено в закладки' : 'Убрано из закладок');
-    } else {
-      setState(() => _data['isFavorited'] = !add);
+    final state = _controller.state;
+    _data = state.comments.single.toJson();
+    setState(() {});
+    if (state.actionFailureVersion > failureVersion) {
       _toast('Не удалось изменить закладку');
+    } else {
+      _toast(add ? 'Добавлено в закладки' : 'Убрано из закладок');
     }
   }
 
@@ -677,24 +679,25 @@ class _CommentWidgetState extends State<CommentWidget> {
         .whereType<Map>()
         .map((item) => Map<String, dynamic>.from(item))
         .toList(growable: false);
-    final result = await context.read<CommentsRepository>().edit(
+    final failureVersion = _controller.state.actionFailureVersion;
+    await _controller.edit(
       commentId: _commentId,
       postId: postId,
       text: newText,
       attachments: media,
     );
     if (!mounted) return;
-    switch (result) {
-      case Success(:final value):
-        setState(() {
-          _data = value.toJson();
-          _data['isEdited'] = true;
-        });
-        widget.onReactionChanged?.call();
-        _toast('Комментарий изменён');
-      case Failure(:final failure):
-        _toast('Не удалось: ${failure.message}');
+    final state = _controller.state;
+    if (state.actionFailureVersion > failureVersion) {
+      _toast('Не удалось: ${state.actionFailure!.message}');
+      return;
     }
+    setState(() {
+      _data = state.comments.single.toJson();
+      _data['isEdited'] = true;
+    });
+    widget.onReactionChanged?.call();
+    _toast('Комментарий изменён');
   }
 
   // I own this comment (its author is the logged-in user).

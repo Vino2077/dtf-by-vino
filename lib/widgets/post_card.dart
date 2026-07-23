@@ -2,9 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
-import '../core/api/result.dart';
 import '../features/comments/data/comments_repository.dart';
+import '../features/comments/presentation/comments_controller.dart';
 import '../features/posts/data/post_repository.dart';
+import '../features/posts/presentation/post_controller.dart';
 import '../models/comment.dart';
 import '../models/block.dart';
 import '../models/post.dart';
@@ -35,6 +36,8 @@ class PostCard extends StatefulWidget {
 }
 
 class _PostCardState extends State<PostCard> {
+  late final PostController _controller;
+  late final CommentsController _commentsController;
   bool _collapsed = false;
   late bool _isFavorited;
   late PostReactions _reactions;
@@ -50,6 +53,13 @@ class _PostCardState extends State<PostCard> {
   @override
   void initState() {
     super.initState();
+    _controller = PostController(
+      context.read<PostRepository>(),
+      initialPost: widget.post,
+    );
+    _commentsController = CommentsController(
+      context.read<CommentsRepository>(),
+    );
     _isFavorited = widget.post.isFavorited;
     _reactions = widget.post.reactions;
     _cachedPreviewText = _previewText();
@@ -66,6 +76,7 @@ class _PostCardState extends State<PostCard> {
   void didUpdateWidget(covariant PostCard oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (!identical(oldWidget.post, widget.post)) {
+      _controller.replacePost(widget.post);
       _isFavorited = widget.post.isFavorited;
       _reactions = widget.post.reactions;
       _cachedPreviewText = _previewText();
@@ -92,13 +103,17 @@ class _PostCardState extends State<PostCard> {
       return;
     }
     _topCommentRequested = true;
-    final result = await context.read<CommentsRepository>().loadTopComment(
-      post.id,
-    );
-    final comment = result.valueOrNull;
+    final comment = await _commentsController.loadTopComment(post.id);
     if (!mounted || comment == null) return;
     _topCommentCache[post.id] = comment;
     setState(() => _topComment = comment);
+  }
+
+  @override
+  void dispose() {
+    _commentsController.dispose();
+    _controller.dispose();
+    super.dispose();
   }
 
   Future<void> _toggleBookmark() async {
@@ -109,16 +124,15 @@ class _PostCardState extends State<PostCard> {
       ).showSnackBar(const SnackBar(content: Text('Войди в аккаунт')));
       return;
     }
-    final postId = widget.post.id;
-    final newState = !_isFavorited;
-    setState(() => _isFavorited = newState);
-    final result = await context.read<PostRepository>().setFavorite(
-      postId,
-      value: newState,
-    );
+    final failureVersion = _controller.state.actionFailureVersion;
+    await _controller.toggleFavorite();
     if (!mounted) return;
-    if (result is Failure<void>) {
-      setState(() => _isFavorited = !newState);
+    final state = _controller.state;
+    setState(() => _isFavorited = state.post!.isFavorited);
+    if (state.actionFailureVersion > failureVersion) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(state.actionFailure!.message)));
     }
   }
 
@@ -130,7 +144,6 @@ class _PostCardState extends State<PostCard> {
       ).showSnackBar(const SnackBar(content: Text('Войди в аккаунт')));
       return;
     }
-    final postId = widget.post.id;
     final snapshot = _reactions;
     final before = snapshot.selectedId;
     final updated = snapshot.toggle(reactionId);
@@ -139,16 +152,15 @@ class _PostCardState extends State<PostCard> {
     if (added) settings.recordReactionUse(reactionId);
     showReactionToast(context, reactionId, added: added);
 
-    final result = await context.read<PostRepository>().setReaction(
-      postId,
-      reactionId,
-    );
+    final failureVersion = _controller.state.actionFailureVersion;
+    await _controller.toggleReaction(reactionId);
     if (!mounted) return;
-    if (result case Failure<void>(:final failure)) {
-      setState(() => _reactions = snapshot);
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Реакция: ${failure.message}')));
+    final state = _controller.state;
+    setState(() => _reactions = state.post!.reactions);
+    if (state.actionFailureVersion > failureVersion) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Реакция: ${state.actionFailure!.message}')),
+      );
     }
   }
 

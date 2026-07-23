@@ -164,7 +164,12 @@ class _SearchScreenState extends State<SearchScreen> {
       children: [
         if (_topBlogs.isNotEmpty) ...[
           const _SectionHeader('Топ блогов'),
-          ...blogs.map((b) => _BlogTile(blog: b)),
+          ...blogs.map(
+            (blog) => _BlogTile(
+              blog: blog,
+              onSetSubscription: _controller.setSubscription,
+            ),
+          ),
           if (_topBlogs.length > 3)
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
@@ -259,7 +264,10 @@ String _fmtCount(dynamic n) {
 
 class _BlogTile extends StatefulWidget {
   final Subsite blog;
-  const _BlogTile({required this.blog});
+  final Future<Result<void>> Function(int subsiteId, {required bool value})
+  onSetSubscription;
+
+  const _BlogTile({required this.blog, required this.onSetSubscription});
 
   @override
   State<_BlogTile> createState() => _BlogTileState();
@@ -284,10 +292,7 @@ class _BlogTileState extends State<_BlogTile> {
       _subscribed = target;
       _busy = true;
     });
-    final result = await context.read<SearchRepository>().setSubscription(
-      id,
-      value: target,
-    );
+    final result = await widget.onSetSubscription(id, value: target);
     if (!mounted) return;
     setState(() {
       _busy = false;

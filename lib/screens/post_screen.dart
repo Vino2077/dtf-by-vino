@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:image_picker/image_picker.dart';
 import '../features/comments/data/comments_repository.dart';
 import '../features/editor/data/editor_repository.dart';
+import '../features/editor/presentation/editor_controller.dart';
 import '../features/comments/presentation/comments_controller.dart';
 import '../features/posts/data/post_repository.dart';
 import '../features/posts/presentation/post_controller.dart';
@@ -43,6 +44,7 @@ class PostScreen extends StatefulWidget {
 class _PostScreenState extends State<PostScreen> {
   late final PostController _postController;
   late final CommentsController _commentsController;
+  late final EditorController _editorController;
   Post? get _post => _postController.state.post;
   List<Comment> get _comments => _commentsController.state.comments;
   CommentTreeIndex _commentTree = CommentTreeIndex.fromComments(const []);
@@ -75,6 +77,7 @@ class _PostScreenState extends State<PostScreen> {
     )..addListener(_onPostChanged);
     _commentsController = CommentsController(context.read<CommentsRepository>())
       ..addListener(_onCommentsChanged);
+    _editorController = EditorController(context.read<EditorRepository>());
     if (widget.postData != null) {
       _commentsStarted = true;
       _fetchComments();
@@ -94,6 +97,7 @@ class _PostScreenState extends State<PostScreen> {
     _commentsController
       ..removeListener(_onCommentsChanged)
       ..dispose();
+    _editorController.dispose();
     _scrollController.dispose();
     _commentController.dispose();
     _commentFocus.dispose();
@@ -424,14 +428,12 @@ class _PostScreenState extends State<PostScreen> {
 
   Future<void> _attachGif() async {
     final settings = context.read<SettingsService>();
-    final editorRepository = context.read<EditorRepository>();
     final gif = await showGifPicker(context);
     if (gif == null || !mounted) return;
     setState(() => _attaching = true);
     // Save to recents, then resolve to a DTF media object via uploader.
     await settings.addRecentGif(gif.toJson());
-    final result = await editorRepository.extractMedia(gif.extractUrl);
-    final media = result.valueOrNull;
+    final media = await _editorController.extractMedia(gif.extractUrl);
     if (!mounted) return;
     setState(() {
       _attaching = false;
@@ -463,10 +465,7 @@ class _PostScreenState extends State<PostScreen> {
     final XFile? file = await picker.pickMedia();
     if (file == null || !mounted) return;
     setState(() => _attaching = true);
-    final result = await context.read<EditorRepository>().uploadMedia(
-      file.path,
-    );
-    final media = result.valueOrNull;
+    final media = await _editorController.uploadMedia(file.path);
     if (!mounted) return;
     setState(() {
       _attaching = false;

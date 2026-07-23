@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../features/comments/data/comments_repository.dart';
+import '../features/comments/presentation/comments_controller.dart';
 import '../services/settings_service.dart';
 import '../services/reactions_registry.dart';
 import '../theme.dart';
@@ -417,6 +418,7 @@ class _BurstPainter extends CustomPainter {
 }
 
 class _ReactionUsersSheetState extends State<_ReactionUsersSheet> {
+  late final CommentsController _controller;
   List<dynamic> _users = [];
   bool _loading = true;
   String _query = '';
@@ -424,19 +426,26 @@ class _ReactionUsersSheetState extends State<_ReactionUsersSheet> {
   @override
   void initState() {
     super.initState();
+    _controller = CommentsController(context.read<CommentsRepository>());
     _load();
   }
 
   Future<void> _load() async {
-    final result = await context.read<CommentsRepository>().loadReactionUsers(
+    final users = await _controller.loadReactionUsers(
       id: widget.id,
       isComment: widget.isComment,
     );
     if (!mounted) return;
     setState(() {
-      _users = result.valueOrNull ?? const [];
+      _users = users;
       _loading = false;
     });
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
   }
 
   @override

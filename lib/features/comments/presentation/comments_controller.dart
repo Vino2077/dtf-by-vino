@@ -40,6 +40,30 @@ class CommentsController extends ChangeNotifier {
     }
   }
 
+  Future<Comment?> loadTopComment(int postId) async {
+    final result = await _repository.loadTopComment(postId);
+    if (result case Success<Comment?>(:final value)) return value;
+    _actionFailed((result as Failure<Comment?>).failure);
+    return null;
+  }
+
+  Future<List<Map<String, dynamic>>> loadReactionUsers({
+    required int id,
+    required bool isComment,
+    int? reactionId,
+  }) async {
+    final result = await _repository.loadReactionUsers(
+      id: id,
+      isComment: isComment,
+      reactionId: reactionId,
+    );
+    if (result case Success<List<Map<String, dynamic>>>(:final value)) {
+      return value;
+    }
+    _actionFailed((result as Failure<List<Map<String, dynamic>>>).failure);
+    return const [];
+  }
+
   Future<void> loadThread(int postId, String threadId) async {
     if (_state.loadingThreadIds.contains(threadId)) return;
     _emit(

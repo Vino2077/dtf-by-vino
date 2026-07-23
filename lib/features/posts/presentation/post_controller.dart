@@ -16,6 +16,10 @@ class PostController extends ChangeNotifier {
   int _generation = 0;
   bool _disposed = false;
 
+  void replacePost(Post post) {
+    _emit(_state.copyWith(post: post));
+  }
+
   Future<void> load(int postId) async {
     final generation = ++_generation;
     _emit(_state.copyWith(isLoading: true, loadFailure: null));
