@@ -44,6 +44,24 @@ void main() {
     client.close();
   });
 
+  test('posts form data through the shared response pipeline', () async {
+    late http.Request captured;
+    final client = createClient((request) async {
+      captured = request;
+      return http.Response('{"result":{"ok":true}}', 200);
+    });
+
+    final result = await client.postForm(
+      'favorite',
+      body: {'id': '42', 'type': '1'},
+    );
+
+    expect(result.valueOrNull, {'ok': true});
+    expect(captured.method, 'POST');
+    expect(captured.bodyFields, {'id': '42', 'type': '1'});
+    client.close();
+  });
+
   test('classifies unauthorized responses', () async {
     final client = createClient(
       (_) async => http.Response('{"message":"invalid token"}', 401),

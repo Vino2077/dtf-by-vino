@@ -3,6 +3,8 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:provider/provider.dart';
 import 'package:image_picker/image_picker.dart';
 import '../api/dtf_api.dart';
+import '../features/posts/data/post_repository.dart';
+import '../features/posts/presentation/post_controller.dart';
 import '../models/post.dart';
 import '../services/settings_service.dart';
 import '../services/restorer_service.dart';
@@ -37,13 +39,16 @@ class PostScreen extends StatefulWidget {
 }
 
 class _PostScreenState extends State<PostScreen> {
-  Post? _post;
+  late final PostController _postController;
+  Post? get _post => _postController.state.post;
   List<dynamic> _comments = [];
   CommentTreeIndex _commentTree = CommentTreeIndex.fromComments(const []);
   List<VisibleComment> _visibleComments = const [];
   final Set<int> _collapsedCommentIds = {};
-  bool _loadingPost = true;
+  bool get _loadingPost => _postController.state.isLoading;
+  bool get _postFailed => _postController.state.loadFailure != null;
   bool _loadingComments = true;
+  bool _commentsStarted = false;
   String _commentSort = 'hotness'; // 'hotness' (popular) | 'date' (new)
   final _scrollController = ScrollController();
   final _commentsKey = GlobalKey(); // for scrolling to the comments section
@@ -61,12 +66,15 @@ class _PostScreenState extends State<PostScreen> {
   @override
   void initState() {
     super.initState();
+    _postController = PostController(
+      context.read<PostRepository>(),
+      initialPost: widget.postData,
+    )..addListener(_onPostChanged);
     if (widget.postData != null) {
-      _post = widget.postData;
-      _loadingPost = false;
+      _commentsStarted = true;
       _fetchComments();
     } else {
-      _fetchPost();
+      _postController.load(widget.postId);
     }
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<SettingsService>().markViewed(widget.postId);
@@ -75,25 +83,28 @@ class _PostScreenState extends State<PostScreen> {
 
   @override
   void dispose() {
+    _postController
+      ..removeListener(_onPostChanged)
+      ..dispose();
     _scrollController.dispose();
     _commentController.dispose();
     _commentFocus.dispose();
     super.dispose();
   }
 
-  bool _postFailed = false;
+  void _onPostChanged() {
+    if (!mounted) return;
+    setState(() {});
+    if (_post != null && !_commentsStarted) {
+      _commentsStarted = true;
+      _fetchComments();
+    }
+  }
 
   Future<void> _fetchPost() async {
-    final settings = context.read<SettingsService>();
-    setState(() { _loadingPost = true; _postFailed = false; });
-    final data = await DtfApi.getEntry(widget.postId, settings);
-    if (!mounted) return;
-    setState(() {
-      _post = data;
-      _loadingPost = false;
-      _postFailed = data == null;
-    });
-    if (data != null) _fetchComments();
+    _commentsStarted = false;
+    setState(() => _loadingComments = true);
+    await _postController.load(widget.postId);
   }
 
   bool _didScrollToComments = false;
@@ -486,29 +497,26 @@ class _PostScreenState extends State<PostScreen> {
       );
       return;
     }
-    // Optimistic: update counters + my reaction instantly, no page reload.
-    final post = _post;
-    if (post == null) return;
-    final snapshot = post.reactions;
-    final updated = snapshot.toggle(reactionId);
-    setState(() => _post = post.copyWith(reactions: updated));
+    final before = _post?.reactions.selectedId ?? 0;
+    final failureVersion = _postController.state.actionFailureVersion;
+    await _postController.toggleReaction(reactionId);
+    if (!mounted) return;
+    final state = _postController.state;
+    if (state.actionFailureVersion > failureVersion) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Реакция: ${state.actionFailure!.message}'),
+          backgroundColor: AppColors.bgElevated,
+        ),
+      );
+      return;
+    }
+    final selected = state.post?.reactions.selectedId ?? 0;
     showReactionToast(
       context,
       reactionId,
-      added: updated.selectedId != 0 && updated.selectedId != snapshot.selectedId,
+      added: selected != 0 && selected != before,
     );
-
-    // Fire the request in the background; restore the snapshot on failure.
-    final result = await DtfApi.setReaction(
-      id: widget.postId, isComment: false, reactionId: reactionId, settings: settings);
-    if (!mounted) return;
-    if (result['ok'] != true) {
-      setState(() => _post = post.copyWith(reactions: snapshot));
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Реакция: ${result['error'] ?? 'ошибка'}'),
-            backgroundColor: AppColors.bgElevated),
-      );
-    }
   }
 
   Future<void> _toggleBookmark() async {
@@ -519,18 +527,29 @@ class _PostScreenState extends State<PostScreen> {
       );
       return;
     }
-    final post = _post;
-    if (post == null) return;
-    final isFav = post.isFavorited;
-    final ok = await DtfApi.toggleFavorite(widget.postId, 1, !isFav, settings);
+    final wasFavorite = _post?.isFavorited;
+    if (wasFavorite == null) return;
+    final failureVersion = _postController.state.actionFailureVersion;
+    await _postController.toggleFavorite();
     if (!mounted) return;
-    if (ok) {
-      setState(() => _post = post.copyWith(isFavorited: !isFav));
+    final state = _postController.state;
+    if (state.actionFailureVersion > failureVersion) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(!isFav ? 'Добавлено в закладки' : 'Убрано из закладок'),
-            backgroundColor: AppColors.bgElevated),
+        SnackBar(
+          content: Text(state.actionFailure!.message),
+          backgroundColor: AppColors.bgElevated,
+        ),
       );
+      return;
     }
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          !wasFavorite ? 'Добавлено в закладки' : 'Убрано из закладок',
+        ),
+        backgroundColor: AppColors.bgElevated,
+      ),
+    );
   }
 
   void _showPostMenu() {

@@ -3,6 +3,8 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../api/dtf_api.dart';
+import '../core/api/result.dart';
+import '../features/posts/data/post_repository.dart';
 import '../models/block.dart';
 import '../models/post.dart';
 import '../models/reaction.dart';
@@ -101,9 +103,14 @@ class _PostCardState extends State<PostCard> {
     final postId = widget.post.id;
     final newState = !_isFavorited;
     setState(() => _isFavorited = newState);
-    final ok = await DtfApi.toggleFavorite(postId, 1, newState, settings);
+    final result = await context.read<PostRepository>().setFavorite(
+      postId,
+      value: newState,
+    );
     if (!mounted) return;
-    if (!ok) setState(() => _isFavorited = !newState);
+    if (result is Failure<void>) {
+      setState(() => _isFavorited = !newState);
+    }
   }
 
   Future<void> _react(int reactionId) async {
@@ -122,13 +129,13 @@ class _PostCardState extends State<PostCard> {
     if (added) settings.recordReactionUse(reactionId);
     showReactionToast(context, reactionId, added: added);
 
-    final result = await DtfApi.setReaction(
-        id: postId, isComment: false, reactionId: reactionId, settings: settings);
+    final result =
+        await context.read<PostRepository>().setReaction(postId, reactionId);
     if (!mounted) return;
-    if (result['ok'] != true) {
+    if (result case Failure<void>(:final failure)) {
       setState(() => _reactions = snapshot);
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Реакция: ${result['error'] ?? 'ошибка'}')),
+        SnackBar(content: Text('Реакция: ${failure.message}')),
       );
     }
   }

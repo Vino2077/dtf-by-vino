@@ -21,21 +21,56 @@ class HttpApiClient implements ApiClient {
   final Duration _timeout;
 
   @override
-  Future<Result<Object?>> get(String path, {String? apiVersion}) async {
-    try {
-      final headers = <String, String>{'User-Agent': ApiConfig.userAgent};
-      final token = _tokenProvider();
-      if (token != null && token.isNotEmpty) {
-        headers['X-Device-Token'] = token;
-      }
+  Future<Result<Object?>> get(String path, {String? apiVersion}) => _execute(
+    () => _client.get(
+      ApiConfig.url(path, version: apiVersion ?? ApiConfig.vDefault),
+      headers: _headers(),
+    ),
+  );
 
-      final response = await _client
-          .get(
+  @override
+  Future<Result<Object?>> postForm(
+    String path, {
+    String? apiVersion,
+    Map<String, String> body = const {},
+  }) => _execute(
+    () => _client.post(
+      ApiConfig.url(path, version: apiVersion ?? ApiConfig.vDefault),
+      headers: _headers(),
+      body: body,
+    ),
+  );
+
+  @override
+  Future<Result<Object?>> postMultipart(
+    String path, {
+    String? apiVersion,
+    Map<String, String> fields = const {},
+  }) => _execute(() async {
+    final request =
+        http.MultipartRequest(
+            'POST',
             ApiConfig.url(path, version: apiVersion ?? ApiConfig.vDefault),
-            headers: headers,
           )
-          .timeout(_timeout);
+          ..headers.addAll(_headers())
+          ..fields.addAll(fields);
+    return http.Response.fromStream(await _client.send(request));
+  });
 
+  Map<String, String> _headers() {
+    final headers = <String, String>{'User-Agent': ApiConfig.userAgent};
+    final token = _tokenProvider();
+    if (token != null && token.isNotEmpty) {
+      headers['X-Device-Token'] = token;
+    }
+    return headers;
+  }
+
+  Future<Result<Object?>> _execute(
+    Future<http.Response> Function() request,
+  ) async {
+    try {
+      final response = await request().timeout(_timeout);
       if (response.statusCode == 401 || response.statusCode == 403) {
         return const Failure(UnauthorizedFailure());
       }

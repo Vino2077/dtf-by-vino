@@ -8,6 +8,8 @@ import 'core/api/api_client.dart';
 import 'core/api/http_api_client.dart';
 import 'features/feed/data/dtf_feed_repository.dart';
 import 'features/feed/data/feed_repository.dart';
+import 'features/posts/data/dtf_post_repository.dart';
+import 'features/posts/data/post_repository.dart';
 import 'services/auth_service.dart';
 import 'services/current_user_service.dart';
 import 'services/notification_service.dart';
@@ -58,6 +60,9 @@ void main() async {
             context.read<ApiClient>(),
             context.read<SettingsService>(),
           ),
+        ),
+        Provider<PostRepository>(
+          create: (context) => DtfPostRepository(context.read<ApiClient>()),
         ),
       ],
       child: const DtfApp(),

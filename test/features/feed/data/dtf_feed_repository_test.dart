@@ -19,6 +19,20 @@ class _FakeApiClient implements ApiClient {
   }
 
   @override
+  Future<Result<Object?>> postForm(
+    String path, {
+    String? apiVersion,
+    Map<String, String> body = const {},
+  }) => throw UnimplementedError();
+
+  @override
+  Future<Result<Object?>> postMultipart(
+    String path, {
+    String? apiVersion,
+    Map<String, String> fields = const {},
+  }) => throw UnimplementedError();
+
+  @override
   void close() {}
 }
 
