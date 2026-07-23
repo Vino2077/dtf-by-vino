@@ -8,6 +8,10 @@ import 'core/api/api_client.dart';
 import 'core/api/http_api_client.dart';
 import 'features/feed/data/dtf_feed_repository.dart';
 import 'features/feed/data/feed_repository.dart';
+import 'services/auth_service.dart';
+import 'services/current_user_service.dart';
+import 'services/notification_service.dart';
+import 'services/preferences_service.dart';
 import 'services/settings_service.dart';
 import 'services/reactions_registry.dart';
 import 'theme.dart';
@@ -32,6 +36,16 @@ void main() async {
     MultiProvider(
       providers: [
         ChangeNotifierProvider.value(value: settings),
+        ChangeNotifierProvider<AuthService>.value(value: settings.auth),
+        ChangeNotifierProvider<PreferencesService>.value(
+          value: settings.preferences,
+        ),
+        ChangeNotifierProvider<CurrentUserService>.value(
+          value: settings.currentUser,
+        ),
+        ChangeNotifierProvider<NotificationService>.value(
+          value: settings.notifications,
+        ),
         Provider<ApiClient>(
           create: (context) => HttpApiClient(
             http.Client(),

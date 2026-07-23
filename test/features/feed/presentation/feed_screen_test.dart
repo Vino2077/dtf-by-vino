@@ -8,6 +8,7 @@ import 'package:dtf_app/services/settings_service.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class _FakeFeedRepository implements FeedRepository {
   _FakeFeedRepository(this.responses);
@@ -30,17 +31,21 @@ Future<void> pumpFeed(
   WidgetTester tester, {
   required FeedRepository repository,
   required FeedType type,
-}) => tester.pumpWidget(
-  MultiProvider(
-    providers: [
-      ChangeNotifierProvider(create: (_) => SettingsService()),
-      Provider<FeedRepository>.value(value: repository),
-    ],
-    child: MaterialApp(
-      home: Scaffold(body: FeedList(feedType: type)),
+}) async {
+  SharedPreferences.setMockInitialValues({});
+  final settings = await SettingsService.load(useLegacyTokenStorage: true);
+  await tester.pumpWidget(
+    MultiProvider(
+      providers: [
+        ChangeNotifierProvider.value(value: settings),
+        Provider<FeedRepository>.value(value: repository),
+      ],
+      child: MaterialApp(
+        home: Scaffold(body: FeedList(feedType: type)),
+      ),
     ),
-  ),
-);
+  );
+}
 
 void main() {
   testWidgets('shows initial failure and retries', (tester) async {

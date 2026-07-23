@@ -6,6 +6,7 @@ import 'package:dtf_app/features/feed/models/feed_page.dart';
 import 'package:dtf_app/features/feed/models/feed_type.dart';
 import 'package:dtf_app/services/settings_service.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class _FakeApiClient implements ApiClient {
   Result<Object?> result = const Success<Object?>(null);
@@ -32,9 +33,10 @@ void main() {
   late SettingsService settings;
   late DtfFeedRepository repository;
 
-  setUp(() {
+  setUp(() async {
+    SharedPreferences.setMockInitialValues({'batch_size': 20});
     apiClient = _FakeApiClient();
-    settings = SettingsService()..batchSize = 20;
+    settings = await SettingsService.load(useLegacyTokenStorage: true);
     repository = DtfFeedRepository(apiClient, settings);
   });
 
@@ -62,7 +64,7 @@ void main() {
   );
 
   test('skips news blocks in regular feeds and filters posts', () async {
-    settings.filterKeywords = ['скрыть'];
+    settings.preferences.filterKeywords = ['скрыть'];
     apiClient.result = Success<Object?>({
       'items': [
         {
