@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../api/dtf_api.dart';
+import '../features/bookmarks/data/bookmarks_repository.dart';
+import '../features/bookmarks/presentation/bookmarks_controller.dart';
 import '../models/comment.dart';
 import '../models/post.dart';
-import '../services/settings_service.dart';
 import '../theme.dart';
 import '../widgets/post_card.dart';
 import '../widgets/comment_widget.dart';
@@ -68,13 +68,15 @@ class _BookmarksList extends StatefulWidget {
 
 class _BookmarksListState extends State<_BookmarksList>
     with AutomaticKeepAliveClientMixin {
-  List<dynamic> _commentItems = [];
-  List<Post> _posts = [];
-  bool _loading = true;
+  late final BookmarksController _controller;
+  List<Comment> get _commentItems => _controller.comments;
+  List<Post> get _posts => _controller.posts;
+  bool get _loading => _controller.isLoading;
 
   // The post id a bookmarked comment belongs to. Tries the structured `entry`
   // object first, then a `url` field (dtf.ru/subsite/12345-slug?comment=…).
-  int? _commentPostId(dynamic data) {
+  int? _commentPostId(Comment comment) {
+    final data = comment.rawJson;
     final entryId = data['entry']?['id'];
     if (entryId is int) return entryId;
     final url = data['url'] ?? data['entry']?['url'];
@@ -96,27 +98,26 @@ class _BookmarksListState extends State<_BookmarksList>
   @override
   void initState() {
     super.initState();
-    _load();
+    _controller = BookmarksController(
+      context.read<BookmarksRepository>(),
+      widget.type,
+    )..addListener(_onChanged);
+    _controller.load();
   }
 
-  Future<void> _load() async {
-    final settings = context.read<SettingsService>();
-    if (widget.type == 'posts') {
-      final posts = await DtfApi.getPostBookmarks(settings);
-      if (!mounted) return;
-      setState(() {
-        _posts = posts;
-        _loading = false;
-      });
-    } else {
-      final comments = await DtfApi.getBookmarks(settings, type: widget.type);
-      if (!mounted) return;
-      setState(() {
-        _commentItems = comments;
-        _loading = false;
-      });
-    }
+  void _onChanged() {
+    if (mounted) setState(() {});
   }
+
+  @override
+  void dispose() {
+    _controller
+      ..removeListener(_onChanged)
+      ..dispose();
+    super.dispose();
+  }
+
+  Future<void> _load() => _controller.load();
 
   @override
   Widget build(BuildContext context) {
@@ -145,10 +146,10 @@ class _BookmarksListState extends State<_BookmarksList>
         itemBuilder: (ctx, i) {
           if (widget.type == 'comments') {
             // Comment bookmarks wrap the actual comment in `data`.
-            final raw = _commentItems[i];
-            final data = raw['data'] ?? raw;
-            final postId = _commentPostId(data);
-            final commentId = data['id'] as int?;
+            final comment = _commentItems[i];
+            final data = comment.rawJson;
+            final postId = _commentPostId(comment);
+            final commentId = comment.id;
             return Padding(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
               // Tap on the comment body → open the post and scroll to this
@@ -168,10 +169,8 @@ class _BookmarksListState extends State<_BookmarksList>
                       )
                     : null,
                 child: CommentWidget(
-                  key: ValueKey(data['id']),
-                  comment: Comment.fromJson(
-                    Map<String, dynamic>.from(data as Map),
-                  ),
+                  key: ValueKey(comment.id),
+                  comment: comment,
                 ),
               ),
             );

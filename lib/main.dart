@@ -6,12 +6,18 @@ import 'package:http/http.dart' as http;
 import 'api/dtf_api.dart';
 import 'core/api/api_client.dart';
 import 'core/api/http_api_client.dart';
+import 'features/bookmarks/data/bookmarks_repository.dart';
+import 'features/bookmarks/data/dtf_bookmarks_repository.dart';
 import 'features/comments/data/comments_repository.dart';
 import 'features/comments/data/dtf_comments_repository.dart';
 import 'features/feed/data/dtf_feed_repository.dart';
 import 'features/feed/data/feed_repository.dart';
 import 'features/posts/data/dtf_post_repository.dart';
+import 'features/profile/data/dtf_profile_repository.dart';
+import 'features/profile/data/profile_repository.dart';
 import 'features/posts/data/post_repository.dart';
+import 'features/search/data/dtf_search_repository.dart';
+import 'features/search/data/search_repository.dart';
 import 'services/auth_service.dart';
 import 'services/current_user_service.dart';
 import 'services/notification_service.dart';
@@ -32,8 +38,10 @@ final navigatorKey = GlobalKey<NavigatorState>();
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await SystemChrome.setPreferredOrientations(
-      [DeviceOrientation.portraitUp, DeviceOrientation.portraitDown]);
+  await SystemChrome.setPreferredOrientations([
+    DeviceOrientation.portraitUp,
+    DeviceOrientation.portraitDown,
+  ]);
   final settings = await SettingsService.load();
   ReactionsRegistry.refresh();
   runApp(
@@ -68,6 +76,16 @@ void main() async {
         ),
         Provider<CommentsRepository>(
           create: (context) => DtfCommentsRepository(context.read<ApiClient>()),
+        ),
+        Provider<BookmarksRepository>(
+          create: (context) =>
+              DtfBookmarksRepository(context.read<ApiClient>()),
+        ),
+        Provider<SearchRepository>(
+          create: (context) => DtfSearchRepository(context.read<ApiClient>()),
+        ),
+        Provider<ProfileRepository>(
+          create: (context) => DtfProfileRepository(context.read<ApiClient>()),
         ),
       ],
       child: const DtfApp(),
@@ -129,15 +147,17 @@ class _MainScreenState extends State<MainScreen> {
     _pollNotifications();
     _loadCurrentUser();
     _pollTimer = Timer.periodic(
-        const Duration(seconds: 60), (_) => _pollNotifications());
+      const Duration(seconds: 60),
+      (_) => _pollNotifications(),
+    );
 
     final storageError = context.read<SettingsService>().authStorageError;
     if (storageError != null) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(storageError)),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(storageError)));
       });
     }
   }
@@ -276,17 +296,26 @@ class _NavItem extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final color = selected ? accent : AppColors.textMuted;
-    Widget iconWidget = Icon(selected ? activeIcon : icon, color: color, size: 24);
+    Widget iconWidget = Icon(
+      selected ? activeIcon : icon,
+      color: color,
+      size: 24,
+    );
 
     if (showBadge) {
-      final count =
-          context.select<SettingsService, int>((s) => s.notificationCount);
+      final count = context.select<SettingsService, int>(
+        (s) => s.notificationCount,
+      );
       if (count > 0) {
         iconWidget = Stack(
           clipBehavior: Clip.none,
           children: [
             iconWidget,
-            Positioned(top: -5, right: -9, child: _NotificationBadge(count: count)),
+            Positioned(
+              top: -5,
+              right: -9,
+              child: _NotificationBadge(count: count),
+            ),
           ],
         );
       }

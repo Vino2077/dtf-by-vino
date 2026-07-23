@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:provider/provider.dart';
-import '../api/dtf_api.dart';
+import '../core/api/result.dart';
+import '../features/profile/data/profile_repository.dart';
+import '../features/profile/presentation/profile_controller.dart';
 import '../models/comment.dart';
 import '../models/post.dart';
 import '../services/settings_service.dart';
@@ -33,21 +35,20 @@ class UserProfileScreen extends StatefulWidget {
 class _UserProfileScreenState extends State<UserProfileScreen>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
-  dynamic _subsite;
-  bool _loadingProfile = true;
+  late final ProfileController _controller;
+  Map<String, dynamic>? get _subsite => _controller.subsite?.rawJson;
+  bool get _loadingProfile => _controller.isLoading;
   bool _subscribing = false;
   bool _isSubscribed = false;
 
   // Posts tab
-  List<Post> _posts = [];
+  List<Post> get _posts => _controller.posts;
   bool _loadingPosts = true;
-  bool _loadingMorePosts = false;
+  bool get _loadingMorePosts => _controller.isLoadingMore;
   String _postSort = 'new'; // 'new' | 'popular'
-  int? _postsLastId;
-  String? _postsLastSorting;
 
   // Comments tab
-  List<dynamic> _comments = [];
+  List<Comment> get _comments => _controller.comments;
   bool _loadingComments = false;
   bool _commentsLoaded = false;
 
@@ -56,6 +57,10 @@ class _UserProfileScreenState extends State<UserProfileScreen>
   @override
   void initState() {
     super.initState();
+    _controller = ProfileController(
+      context.read<ProfileRepository>(),
+      subsiteId: widget.subsiteId,
+    )..addListener(_onControllerChanged);
     _tabController = TabController(length: 3, vsync: this);
     _tabController.addListener(_onTabChanged);
     _loadProfile();
@@ -68,8 +73,15 @@ class _UserProfileScreenState extends State<UserProfileScreen>
     });
   }
 
+  void _onControllerChanged() {
+    if (mounted) setState(() {});
+  }
+
   @override
   void dispose() {
+    _controller
+      ..removeListener(_onControllerChanged)
+      ..dispose();
     _tabController.dispose();
     _scrollController.dispose();
     super.dispose();
@@ -82,62 +94,23 @@ class _UserProfileScreenState extends State<UserProfileScreen>
   }
 
   Future<void> _loadProfile() async {
-    final settings = context.read<SettingsService>();
-    try {
-      final sub = await DtfApi.getSubsite(widget.subsiteId, settings);
-      if (!mounted) return;
-      setState(() {
-        _subsite = sub;
-        _isSubscribed = sub?['isSubscribed'] == true;
-        _loadingProfile = false;
-      });
-    } catch (_) {
-      if (mounted) setState(() => _loadingProfile = false);
-    }
+    await _controller.load();
+    if (!mounted) return;
+    setState(() {
+      _isSubscribed = _subsite?['isSubscribed'] == true;
+    });
   }
 
   Future<void> _loadPosts({bool reset = false}) async {
-    if (reset) {
-      setState(() {
-        _loadingPosts = true;
-        _posts = [];
-        _postsLastId = null;
-        _postsLastSorting = null;
-      });
-    }
-    final settings = context.read<SettingsService>();
-    final page = await DtfApi.getSubsiteEntries(
-      widget.subsiteId,
-      settings,
-      sorting: _postSort,
-    );
-    if (!mounted) return;
-    setState(() {
-      _posts = page.items;
-      _postsLastId = page.lastId;
-      _postsLastSorting = page.lastSortingValue;
-      _loadingPosts = false;
-    });
+    if (reset) setState(() => _loadingPosts = true);
+    _controller.sorting = _postSort;
+    await _controller.loadPosts(refresh: reset);
+    if (mounted) setState(() => _loadingPosts = false);
   }
 
   Future<void> _loadMorePosts() async {
-    if (_loadingMorePosts || _postsLastId == null) return;
-    setState(() => _loadingMorePosts = true);
-    final settings = context.read<SettingsService>();
-    final page = await DtfApi.getSubsiteEntries(
-      widget.subsiteId,
-      settings,
-      sorting: _postSort,
-      lastId: _postsLastId,
-      lastSortingValue: _postsLastSorting,
-    );
-    if (!mounted) return;
-    setState(() {
-      _posts.addAll(page.items);
-      _postsLastId = page.lastId;
-      _postsLastSorting = page.lastSortingValue;
-      _loadingMorePosts = false;
-    });
+    if (_loadingMorePosts) return;
+    await _controller.loadPosts();
   }
 
   Future<void> _loadComments() async {
@@ -145,16 +118,8 @@ class _UserProfileScreenState extends State<UserProfileScreen>
       _loadingComments = true;
       _commentsLoaded = true;
     });
-    final settings = context.read<SettingsService>();
-    final comments = await DtfApi.getSubsiteComments(
-      widget.subsiteId,
-      settings,
-    );
-    if (!mounted) return;
-    setState(() {
-      _comments = comments;
-      _loadingComments = false;
-    });
+    await _controller.loadComments();
+    if (mounted) setState(() => _loadingComments = false);
   }
 
   Future<void> _changePostSort(String sort) async {
@@ -173,17 +138,13 @@ class _UserProfileScreenState extends State<UserProfileScreen>
     }
     setState(() => _subscribing = true);
     final newState = !_isSubscribed;
-    final ok = await DtfApi.toggleSubscription(
-      widget.subsiteId,
-      newState,
-      settings,
-    );
+    final result = await _controller.setSubscription(newState);
     if (!mounted) return;
     setState(() {
       _subscribing = false;
-      if (ok) _isSubscribed = newState;
+      if (result is Success<void>) _isSubscribed = newState;
     });
-    if (!ok) {
+    if (result is Failure<void>) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Не удалось изменить подписку')),
       );
@@ -217,10 +178,12 @@ class _UserProfileScreenState extends State<UserProfileScreen>
                     background: CachedNetworkImage(
                       // Animated covers: skip scale_crop — like every other
                       // resize op on this CDN, it freezes on one frame.
-                      imageUrl: _subsite['cover']['data']['type'] == 'gif'
-                          ? OsnovaImage(_subsite['cover']['data']['uuid']).gif()
+                      imageUrl: _subsite!['cover']['data']['type'] == 'gif'
+                          ? OsnovaImage(
+                              _subsite!['cover']['data']['uuid'],
+                            ).gif()
                           : OsnovaImage(
-                              _subsite['cover']['data']['uuid'],
+                              _subsite!['cover']['data']['uuid'],
                             ).scaleCrop(800, 300),
                       fit: BoxFit.cover,
                       errorWidget: (_, _, _) =>
@@ -263,9 +226,9 @@ class _UserProfileScreenState extends State<UserProfileScreen>
         child: Center(child: CircularProgressIndicator()),
       );
     }
-    final sub = _subsite;
+    final sub = _subsite ?? const <String, dynamic>{};
     final accent = Theme.of(context).colorScheme.primary;
-    final rating = sub?['rating'];
+    final rating = sub['rating'];
     return Container(
       color: AppColors.bgDeep,
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
@@ -276,9 +239,9 @@ class _UserProfileScreenState extends State<UserProfileScreen>
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
               Avatar(
-                uuid: sub?['avatar']?['data']?['uuid'] ?? widget.initialAvatar,
+                uuid: sub['avatar']?['data']?['uuid'] ?? widget.initialAvatar,
                 size: 88,
-                animated: sub?['avatar']?['data']?['type'] == 'gif',
+                animated: sub['avatar']?['data']?['type'] == 'gif',
               ),
               const SizedBox(width: 16),
               Expanded(
@@ -289,7 +252,7 @@ class _UserProfileScreenState extends State<UserProfileScreen>
                       children: [
                         Flexible(
                           child: Text(
-                            sub?['name'] ?? widget.initialName ?? '',
+                            sub['name'] ?? widget.initialName ?? '',
                             style: TextStyle(
                               color: Colors.white,
                               fontSize: 26,
@@ -298,7 +261,7 @@ class _UserProfileScreenState extends State<UserProfileScreen>
                           ),
                         ),
                         AuthorBadge(author: sub, size: 18),
-                        if (sub?['isVerified'] == true) ...[
+                        if (sub['isVerified'] == true) ...[
                           const SizedBox(width: 4),
                           Icon(Icons.verified, color: accent, size: 18),
                         ],
@@ -329,7 +292,7 @@ class _UserProfileScreenState extends State<UserProfileScreen>
           ),
           const SizedBox(height: 14),
           _buildActionRow(),
-          if (sub?['description'] != null &&
+          if (sub['description'] != null &&
               (sub['description'] as String).isNotEmpty) ...[
             const SizedBox(height: 12),
             LinkifiedText(
@@ -505,7 +468,8 @@ class _UserProfileScreenState extends State<UserProfileScreen>
       padding: const EdgeInsets.all(12),
       itemCount: _comments.length,
       itemBuilder: (ctx, i) {
-        final c = _comments[i];
+        final comment = _comments[i];
+        final c = comment.rawJson;
         final entry = c['entry'];
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -546,9 +510,7 @@ class _UserProfileScreenState extends State<UserProfileScreen>
                   ),
                 ),
               ),
-            CommentWidget(
-              comment: Comment.fromJson(Map<String, dynamic>.from(c as Map)),
-            ),
+            CommentWidget(comment: comment),
           ],
         );
       },
@@ -561,7 +523,7 @@ class _UserProfileScreenState extends State<UserProfileScreen>
         child: Text('Нет данных', style: TextStyle(color: Colors.grey)),
       );
     }
-    final sub = _subsite;
+    final sub = _subsite!;
     final created = sub['created'] as int?;
     final counters = sub['counters'];
     final rows = <(String, String)>[
