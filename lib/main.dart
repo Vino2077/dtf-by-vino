@@ -2,7 +2,12 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import 'package:http/http.dart' as http;
 import 'api/dtf_api.dart';
+import 'core/api/api_client.dart';
+import 'core/api/http_api_client.dart';
+import 'features/feed/data/dtf_feed_repository.dart';
+import 'features/feed/data/feed_repository.dart';
 import 'services/settings_service.dart';
 import 'services/reactions_registry.dart';
 import 'theme.dart';
@@ -24,8 +29,23 @@ void main() async {
   final settings = await SettingsService.load();
   ReactionsRegistry.refresh();
   runApp(
-    ChangeNotifierProvider.value(
-      value: settings,
+    MultiProvider(
+      providers: [
+        ChangeNotifierProvider.value(value: settings),
+        Provider<ApiClient>(
+          create: (context) => HttpApiClient(
+            http.Client(),
+            () => context.read<SettingsService>().token,
+          ),
+          dispose: (_, client) => client.close(),
+        ),
+        Provider<FeedRepository>(
+          create: (context) => DtfFeedRepository(
+            context.read<ApiClient>(),
+            context.read<SettingsService>(),
+          ),
+        ),
+      ],
       child: const DtfApp(),
     ),
   );

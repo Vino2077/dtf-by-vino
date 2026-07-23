@@ -1,7 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
-import '../api/dtf_api.dart';
+import '../core/api/app_failure.dart';
+import '../features/feed/data/feed_repository.dart';
+import '../features/feed/models/feed_type.dart';
+import '../features/feed/presentation/feed_controller.dart';
+import '../features/feed/presentation/feed_state.dart';
 import '../models/block.dart';
 import '../models/post.dart';
 import '../services/settings_service.dart';
@@ -23,10 +27,10 @@ class FeedScreenState extends State<FeedScreen> with SingleTickerProviderStateMi
 
   // (feedType, fullLabel, shortLabel) — order matches the Figma redesign.
   final _tabs = [
-    ('popular',   'Популярное', 'Топ'),
-    ('new',       'Свежее',     'Св.'),
-    ('my',        'Моя лента',  'Моя'),
-    ('editorial', 'Новости',    'Нов.'),
+    (FeedType.popular, 'Популярное', 'Топ'),
+    (FeedType.fresh, 'Свежее', 'Св.'),
+    (FeedType.personal, 'Моя лента', 'Моя'),
+    (FeedType.editorial, 'Новости', 'Нов.'),
   ];
 
   // One key per tab so the active feed list can be scrolled to top (e.g. when
@@ -205,7 +209,7 @@ class _NewsItem extends StatelessWidget {
 
 /// A single self-loading, paginated feed list. Kept alive across tab swipes.
 class FeedList extends StatefulWidget {
-  final String feedType; // 'popular' | 'new' | 'editorial' | 'my'
+  final FeedType feedType;
   const FeedList({super.key, required this.feedType});
 
   @override
@@ -213,13 +217,11 @@ class FeedList extends StatefulWidget {
 }
 
 class FeedListState extends State<FeedList> with AutomaticKeepAliveClientMixin {
-  List<Post> _posts = [];
-  List<Post> _editorialPosts = []; // top-4 editorial, shown only in 'popular'
-  bool _loading = true;
-  bool _loadingMore = false;
-  int? _lastId;
-  String? _lastSortingValue;
+  late final FeedController _controller;
+  late final SettingsService _settings;
   final _scrollController = ScrollController();
+  var _lastRefreshFailureVersion = 0;
+  late bool _wasLoggedIn;
 
   @override
   bool get wantKeepAlive => true;
@@ -227,76 +229,59 @@ class FeedListState extends State<FeedList> with AutomaticKeepAliveClientMixin {
   @override
   void initState() {
     super.initState();
-    _scrollController.addListener(() {
-      final pos = _scrollController.position;
-      if (pos.pixels > pos.maxScrollExtent - 500 && !_loadingMore) _fetchMore();
-    });
-    _fetchPosts();
+    _settings = context.read<SettingsService>();
+    _wasLoggedIn = _settings.isLoggedIn;
+    _controller = FeedController(
+      context.read<FeedRepository>(),
+      () => _settings.isLoggedIn,
+      type: widget.feedType,
+    )..addListener(_onControllerChanged);
+    _settings.addListener(_onSettingsChanged);
+    _scrollController.addListener(_onScroll);
+    _controller.load();
+  }
+
+  void _onScroll() {
+    if (!_scrollController.hasClients) return;
+    final position = _scrollController.position;
+    if (position.pixels > position.maxScrollExtent - 500) {
+      _controller.loadMore();
+    }
+  }
+
+  void _onSettingsChanged() {
+    final isLoggedIn = _settings.isLoggedIn;
+    if (widget.feedType == FeedType.personal && isLoggedIn != _wasLoggedIn) {
+      _wasLoggedIn = isLoggedIn;
+      _controller.load();
+    }
+  }
+
+  void _onControllerChanged() {
+    if (!mounted) return;
+    final state = _controller.state;
+    setState(() {});
+    if (state.refreshFailureVersion > _lastRefreshFailureVersion) {
+      _lastRefreshFailureVersion = state.refreshFailureVersion;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted || state.refreshFailure == null) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(state.refreshFailure!.message)),
+        );
+      });
+    }
   }
 
   @override
   void dispose() {
-    _scrollController.dispose();
+    _scrollController
+      ..removeListener(_onScroll)
+      ..dispose();
+    _settings.removeListener(_onSettingsChanged);
+    _controller
+      ..removeListener(_onControllerChanged)
+      ..dispose();
     super.dispose();
-  }
-
-  Future<FeedPage> _loadPage({int? lastId, String? lastSortingValue}) {
-    final settings = context.read<SettingsService>();
-    if (widget.feedType == 'editorial') {
-      return DtfApi.getEditorialFeed(
-          settings: settings, lastId: lastId, lastSortingValue: lastSortingValue);
-    }
-    return DtfApi.getFeed(
-        settings: settings, type: widget.feedType,
-        lastId: lastId, lastSortingValue: lastSortingValue);
-  }
-
-  Future<void> _fetchPosts() async {
-    setState(() { _loading = true; _posts = []; _lastId = null; _lastSortingValue = null; });
-    final settings = context.read<SettingsService>();
-    if (widget.feedType == 'my' && !settings.isLoggedIn) {
-      setState(() => _loading = false);
-      return;
-    }
-    try {
-      // For popular: load editorial digest in parallel with the main feed.
-      final futures = <Future>[_loadPage()];
-      if (widget.feedType == 'popular') {
-        futures.add(DtfApi.getEditorialFeed(settings: settings));
-      }
-      final results = await Future.wait(futures);
-      if (!mounted) return;
-      final page = results[0] as FeedPage;
-      setState(() {
-        _posts = page.items.where((p) => !settings.isFiltered(p)).toList();
-        _lastId = page.lastId;
-        _lastSortingValue = page.lastSortingValue;
-        if (widget.feedType == 'popular') {
-          _editorialPosts = (results[1] as FeedPage).items.take(4).toList();
-        }
-        _loading = false;
-      });
-    } catch (_) {
-      if (mounted) setState(() => _loading = false);
-    }
-  }
-
-  Future<void> _fetchMore() async {
-    if (_loadingMore || _lastId == null) return;
-    setState(() => _loadingMore = true);
-    final settings = context.read<SettingsService>();
-    try {
-      final page = await _loadPage(lastId: _lastId, lastSortingValue: _lastSortingValue);
-      if (!mounted) return;
-      setState(() {
-        _posts.addAll(page.items.where((p) => !settings.isFiltered(p)));
-        _lastId = page.lastId;
-        _lastSortingValue = page.lastSortingValue;
-        _loadingMore = false;
-      });
-    } catch (_) {
-      if (mounted) setState(() => _loadingMore = false);
-    }
   }
 
   /// Scrolls this feed list back to the top (invoked from the "Главная" nav
@@ -310,9 +295,9 @@ class FeedListState extends State<FeedList> with AutomaticKeepAliveClientMixin {
   @override
   Widget build(BuildContext context) {
     super.build(context);
-    final isLoggedIn = context.select<SettingsService, bool>((s) => s.isLoggedIn);
+    final state = _controller.state;
 
-    if (widget.feedType == 'my' && !isLoggedIn) {
+    if (state.requiresAuthentication) {
       return Center(
         child: Padding(
           padding: EdgeInsets.all(24),
@@ -324,82 +309,132 @@ class FeedListState extends State<FeedList> with AutomaticKeepAliveClientMixin {
         ),
       );
     }
-
-    if (_loading) return const FeedSkeleton();
+    if (state.isInitialLoading) return const FeedSkeleton();
+    if (state.initialFailure != null) {
+      return _FeedInitialError(
+        failure: state.initialFailure!,
+        onRetry: _controller.retryInitial,
+      );
+    }
 
     final bottomPad = MediaQuery.of(context).padding.bottom + 86;
-
     return RefreshIndicator(
-          onRefresh: _fetchPosts,
-          child: _posts.isEmpty
-              ? ListView(
-                  physics: AlwaysScrollableScrollPhysics(),
-                  padding: EdgeInsets.only(bottom: bottomPad),
-                  children: [
-                    SizedBox(height: 200),
-                    Center(
-                        child: Text('Нет постов',
-                            style: TextStyle(color: AppColors.textSecondary))),
-                  ],
-                )
-              : ListView.builder(
-                  controller: _scrollController,
-                  padding: EdgeInsets.only(top: 8, bottom: bottomPad),
-                  itemCount: _posts.length +
-                      (_editorialPosts.isNotEmpty && widget.feedType == 'popular' ? 1 : 0) +
-                      (_loadingMore ? 1 : 0),
-                  itemBuilder: (ctx, i) {
-                    // Slot 0 in 'popular': the editorial digest block.
-                    final hasDigest = widget.feedType == 'popular' && _editorialPosts.isNotEmpty;
-                    if (i == 0 && hasDigest) {
-                      return _NewsDigestBlock(
-                        posts: _editorialPosts,
-                        onTap: (post) => Navigator.push(
-                          ctx,
-                          MaterialPageRoute(
-                            builder: (_) => PostScreen(
-                              postId: post.id,
-                              title: post.title,
-                              postData: post,
-                            ),
-                          ),
-                        ),
-                      );
-                    }
-                    final postIdx = hasDigest ? i - 1 : i;
-                    if (postIdx == _posts.length) {
-                      return const Center(
-                        child: Padding(padding: EdgeInsets.all(16), child: CircularProgressIndicator()),
-                      );
-                    }
-                    final post = _posts[postIdx];
-                    return PostCard(
-                      key: ValueKey(post.id),
-                      post: post,
-                      onTap: () => Navigator.push(
-                        ctx,
-                        MaterialPageRoute(
-                          builder: (_) => PostScreen(
-                            postId: post.id,
-                            title: post.title,
-                            postData: post,
-                          ),
-                        ),
-                      ),
-                      onTapComments: () => Navigator.push(
-                        ctx,
-                        MaterialPageRoute(
-                          builder: (_) => PostScreen(
-                            postId: post.id,
-                            title: post.title,
-                            postData: post,
-                            openToComments: true,
-                          ),
-                        ),
-                      ),
-                    );
-                  },
+      onRefresh: _controller.refresh,
+      child: state.posts.isEmpty
+          ? ListView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              padding: EdgeInsets.only(bottom: bottomPad),
+              children: [
+                const SizedBox(height: 200),
+                Center(
+                  child: Text('Нет постов',
+                      style: TextStyle(color: AppColors.textSecondary)),
                 ),
-        );
+              ],
+            )
+          : _buildPosts(state, bottomPad),
+    );
   }
+
+  Widget _buildPosts(FeedState state, double bottomPad) {
+    final hasDigest =
+        widget.feedType == FeedType.popular && state.editorialPosts.isNotEmpty;
+    final hasFooter = state.isLoadingMore || state.paginationFailure != null;
+    return ListView.builder(
+      controller: _scrollController,
+      padding: EdgeInsets.only(top: 8, bottom: bottomPad),
+      itemCount: state.posts.length + (hasDigest ? 1 : 0) + (hasFooter ? 1 : 0),
+      itemBuilder: (context, index) {
+        if (index == 0 && hasDigest) {
+          return _NewsDigestBlock(
+            posts: state.editorialPosts,
+            onTap: (post) => _openPost(context, post),
+          );
+        }
+        final postIndex = hasDigest ? index - 1 : index;
+        if (postIndex == state.posts.length) {
+          if (state.paginationFailure != null) {
+            return _PaginationError(
+              message: state.paginationFailure!.message,
+              onRetry: _controller.retryPagination,
+            );
+          }
+          return const Center(
+            child: Padding(
+              padding: EdgeInsets.all(16),
+              child: CircularProgressIndicator(),
+            ),
+          );
+        }
+        final post = state.posts[postIndex];
+        return PostCard(
+          key: ValueKey(post.id),
+          post: post,
+          onTap: () => _openPost(context, post),
+          onTapComments: () => _openPost(context, post, comments: true),
+        );
+      },
+    );
+  }
+
+  void _openPost(BuildContext context, Post post, {bool comments = false}) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => PostScreen(
+          postId: post.id,
+          title: post.title,
+          postData: post,
+          openToComments: comments,
+        ),
+      ),
+    );
+  }
+}
+
+class _FeedInitialError extends StatelessWidget {
+  const _FeedInitialError({required this.failure, required this.onRetry});
+
+  final AppFailure failure;
+  final Future<void> Function() onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.cloud_off, color: AppColors.textMuted, size: 48),
+            const SizedBox(height: 12),
+            Text(failure.message,
+                textAlign: TextAlign.center,
+                style: const TextStyle(color: AppColors.textSecondary)),
+            const SizedBox(height: 16),
+            ElevatedButton(onPressed: onRetry, child: const Text('Повторить')),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _PaginationError extends StatelessWidget {
+  const _PaginationError({required this.message, required this.onRetry});
+
+  final String message;
+  final Future<void> Function() onRetry;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+        padding: const EdgeInsets.all(16),
+        child: Center(
+          child: TextButton.icon(
+            onPressed: onRetry,
+            icon: const Icon(Icons.refresh),
+            label: Text('$message · Повторить'),
+          ),
+        ),
+      );
 }
