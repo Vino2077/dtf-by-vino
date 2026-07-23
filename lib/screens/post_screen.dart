@@ -3,8 +3,11 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:provider/provider.dart';
 import 'package:image_picker/image_picker.dart';
 import '../api/dtf_api.dart';
+import '../features/comments/data/comments_repository.dart';
+import '../features/comments/presentation/comments_controller.dart';
 import '../features/posts/data/post_repository.dart';
 import '../features/posts/presentation/post_controller.dart';
+import '../models/comment.dart';
 import '../models/post.dart';
 import '../services/settings_service.dart';
 import '../services/restorer_service.dart';
@@ -40,11 +43,12 @@ class PostScreen extends StatefulWidget {
 
 class _PostScreenState extends State<PostScreen> {
   late final PostController _postController;
+  late final CommentsController _commentsController;
   Post? get _post => _postController.state.post;
-  List<dynamic> _comments = [];
+  List<Comment> get _comments => _commentsController.state.comments;
   CommentTreeIndex _commentTree = CommentTreeIndex.fromComments(const []);
   List<VisibleComment> _visibleComments = const [];
-  final Set<int> _collapsedCommentIds = {};
+  Set<int> get _collapsedCommentIds => _commentsController.state.collapsedIds;
   bool get _loadingPost => _postController.state.isLoading;
   bool get _postFailed => _postController.state.loadFailure != null;
   bool _loadingComments = true;
@@ -70,6 +74,8 @@ class _PostScreenState extends State<PostScreen> {
       context.read<PostRepository>(),
       initialPost: widget.postData,
     )..addListener(_onPostChanged);
+    _commentsController = CommentsController(context.read<CommentsRepository>())
+      ..addListener(_onCommentsChanged);
     if (widget.postData != null) {
       _commentsStarted = true;
       _fetchComments();
@@ -85,6 +91,9 @@ class _PostScreenState extends State<PostScreen> {
   void dispose() {
     _postController
       ..removeListener(_onPostChanged)
+      ..dispose();
+    _commentsController
+      ..removeListener(_onCommentsChanged)
       ..dispose();
     _scrollController.dispose();
     _commentController.dispose();
@@ -110,38 +119,30 @@ class _PostScreenState extends State<PostScreen> {
   bool _didScrollToComments = false;
 
   Future<void> _fetchComments() async {
-    final settings = context.read<SettingsService>();
-    try {
-      // Coming from a notification/search → load a wider window so the target
-      // comment is more likely to be among the loaded set (it can't be fetched
-      // by id — the API only returns pages of a post's comments).
-      final list = await DtfApi.getComments(widget.postId, settings,
-          sorting: _commentSort,
-          count: widget.scrollToCommentId != null ? 500 : 200);
-      if (!mounted) return;
-      setState(() {
-        _comments = list;
-        _rebuildCommentIndex();
-        _loadingComments = false;
-      });
-      // Came from a notification, or tapped "comments" in the feed → jump down once.
-      if ((widget.scrollToCommentId != null || widget.openToComments) && !_didScrollToComments) {
-        _didScrollToComments = true;
-        // If the target is a deep reply that wasn't in the initial load, pull
-        // in its branch first so scroll-to can actually reach it.
-        if (widget.scrollToCommentId != null &&
-            !_comments.any((c) => c['id'] == widget.scrollToCommentId)) {
-          await _ensureTargetLoaded(widget.scrollToCommentId!);
-        }
-        if (!mounted) return;
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          _scrollToComments();
-        });
+    await _commentsController.load(
+      widget.postId,
+      sorting: _commentSort,
+      count: widget.scrollToCommentId != null ? 500 : 200,
+    );
+    if (!mounted || _commentsController.state.loadFailure != null) return;
+    if ((widget.scrollToCommentId != null || widget.openToComments) &&
+        !_didScrollToComments) {
+      _didScrollToComments = true;
+      if (widget.scrollToCommentId != null &&
+          !_comments.any((comment) => comment.id == widget.scrollToCommentId)) {
+        await _ensureTargetLoaded(widget.scrollToCommentId!);
       }
-      _enrichWithArchive(); // restore deleted text + edit history in background
-    } catch (_) {
-      if (mounted) setState(() => _loadingComments = false);
+      if (!mounted) return;
+      WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToComments());
     }
+    _enrichWithArchive();
+  }
+
+  void _onCommentsChanged() {
+    if (!mounted) return;
+    _loadingComments = _commentsController.state.isLoading;
+    _rebuildCommentIndex();
+    setState(() {});
   }
 
   // Cached community-archive data, so lazily-loaded thread branches can also
@@ -166,37 +167,40 @@ class _PostScreenState extends State<PostScreen> {
   /// Applies cached archive data to [list]. Returns true if anything changed.
   /// A comment counts as deleted/hidden when DTF flags it, when its text is the
   /// moderator placeholder, or when it's empty — all of those get restored.
-  bool _applyArchive(List<dynamic> list) {
+  bool _applyArchive(List<Comment> list) {
     if (_archiveComments.isEmpty && _archiveEdits.isEmpty) return false;
     var changed = false;
-    for (final c in list) {
-      if (c is! Map) continue;
-      final id = '${c['id']}';
-      if (c['_restoredText'] == null && c['_restoredMedia'] == null) {
-        final text = (c['text'] ?? '').toString().trim();
-        final hasMedia = (c['media'] as List?)?.isNotEmpty ?? false;
-        // Mod-deleted comments arrive with a placeholder text (not empty),
-        // so detect by flags too — that was the bug that hid restored text.
-        final isDeleted = c['isRemoved'] == true ||
-            c['isRemovedByModerator'] == true ||
-            c['isHiddenByBan'] == true ||
+    final updated = <Comment>[];
+    for (final comment in list) {
+      final data = comment.toJson();
+      final id = '${comment.id}';
+      if (data['_restoredText'] == null && data['_restoredMedia'] == null) {
+        final text = comment.text.trim();
+        final hasMedia = (data['media'] as List?)?.isNotEmpty ?? false;
+        final isDeleted =
+            data['isRemoved'] == true ||
+            data['isRemovedByModerator'] == true ||
+            data['isHiddenByBan'] == true ||
             (text.isEmpty && !hasMedia);
         if (isDeleted && _archiveComments[id] is Map) {
-          final data = _archiveComments[id] as Map;
-          final rText = (data['text'] ?? '').toString();
-          final rMedia = data['media'];
-          if (rText.isNotEmpty || (rMedia is List && rMedia.isNotEmpty)) {
-            c['_restoredText'] = rText;
-            c['_restoredMedia'] = rMedia;
+          final archive = _archiveComments[id] as Map;
+          final restoredText = (archive['text'] ?? '').toString();
+          final restoredMedia = archive['media'];
+          if (restoredText.isNotEmpty ||
+              (restoredMedia is List && restoredMedia.isNotEmpty)) {
+            data['_restoredText'] = restoredText;
+            data['_restoredMedia'] = restoredMedia;
             changed = true;
           }
         }
       }
-      if (c['_edits'] == null && _archiveEdits[id] is Map) {
-        c['_edits'] = _archiveEdits[id];
+      if (data['_edits'] == null && _archiveEdits[id] is Map) {
+        data['_edits'] = _archiveEdits[id];
         changed = true;
       }
+      updated.add(Comment.fromJson(data));
     }
+    if (changed) _commentsController.replaceAll(updated);
     return changed;
   }
 
@@ -218,10 +222,12 @@ class _PostScreenState extends State<PostScreen> {
       final targetCtx = wantTarget ? _targetCommentKey.currentContext : null;
       if (targetCtx != null) {
         if (!targetCtx.mounted) return;
-        await Scrollable.ensureVisible(targetCtx,
-            duration: const Duration(milliseconds: 350),
-            curve: Curves.easeOut,
-            alignment: 0.15);
+        await Scrollable.ensureVisible(
+          targetCtx,
+          duration: const Duration(milliseconds: 350),
+          curve: Curves.easeOut,
+          alignment: 0.15,
+        );
         return;
       }
 
@@ -232,10 +238,12 @@ class _PostScreenState extends State<PostScreen> {
       final headerCtx = _commentsKey.currentContext;
       if (headerCtx != null) {
         if (!headerCtx.mounted) return;
-        await Scrollable.ensureVisible(headerCtx,
-            duration: const Duration(milliseconds: 250),
-            curve: Curves.easeOut,
-            alignment: 0.0);
+        await Scrollable.ensureVisible(
+          headerCtx,
+          duration: const Duration(milliseconds: 250),
+          curve: Curves.easeOut,
+          alignment: 0.0,
+        );
         if (!wantTarget) return;
         // Give the promoted target a few frames to build, then centre it.
         for (var t = 0; t < 8; t++) {
@@ -244,10 +252,12 @@ class _PostScreenState extends State<PostScreen> {
           final tc = _targetCommentKey.currentContext;
           if (tc != null) {
             if (!tc.mounted) return;
-            await Scrollable.ensureVisible(tc,
-                duration: const Duration(milliseconds: 300),
-                curve: Curves.easeOut,
-                alignment: 0.15);
+            await Scrollable.ensureVisible(
+              tc,
+              duration: const Duration(milliseconds: 300),
+              curve: Curves.easeOut,
+              alignment: 0.15,
+            );
             return;
           }
         }
@@ -258,60 +268,39 @@ class _PostScreenState extends State<PostScreen> {
 
       // Comments section not built yet — advance toward it.
       final pos = _scrollController.position;
-      final next = (pos.pixels + pos.viewportDimension * 1.5)
-          .clamp(0.0, pos.maxScrollExtent);
+      final next = (pos.pixels + pos.viewportDimension * 1.5).clamp(
+        0.0,
+        pos.maxScrollExtent,
+      );
       if (next <= pos.pixels + 1) return; // nothing more to scroll
-      await _scrollController.animateTo(next,
-          duration: const Duration(milliseconds: 90), curve: Curves.easeOut);
+      await _scrollController.animateTo(
+        next,
+        duration: const Duration(milliseconds: 90),
+        curve: Curves.easeOut,
+      );
       await Future.delayed(const Duration(milliseconds: 30));
     }
   }
 
   Future<void> _changeCommentSort(String sort) async {
     if (_commentSort == sort) return;
-    setState(() { _commentSort = sort; _loadingComments = true; });
+    setState(() {
+      _commentSort = sort;
+      _loadingComments = true;
+    });
     await _fetchComments();
   }
 
-  final Set<String> _loadingThreads = {};
+  Set<String> get _loadingThreads => _commentsController.state.loadingThreadIds;
 
   Future<void> _loadThread(String threadId) async {
-    if (_loadingThreads.contains(threadId)) return;
-    setState(() => _loadingThreads.add(threadId));
-    final settings = context.read<SettingsService>();
-    final branch = await DtfApi.getThread(widget.postId, threadId, settings);
+    await _commentsController.loadThread(widget.postId, threadId);
     if (!mounted) return;
-    setState(() {
-      _mergeComments(branch);
-      _loadingThreads.remove(threadId);
-      _applyArchive(_comments); // restore any deleted comments in this branch
-      _rebuildCommentIndex();
-    });
-  }
-
-  /// Adds any comments from [incoming] we don't already have. Returns true if
-  /// at least one new comment was added.
-  bool _mergeComments(List<dynamic> incoming) {
-    final existing = {
-      for (final c in _comments)
-        if (c['id'] is int) c['id'] as int
-    };
-    var added = false;
-    for (final c in incoming) {
-      final id = c['id'];
-      if (id is int && !existing.contains(id)) {
-        _comments.add(c);
-        existing.add(id);
-        added = true;
-      }
-    }
-    return added;
+    _applyArchive(_comments);
   }
 
   void _rebuildCommentIndex() {
     _commentTree = CommentTreeIndex.fromComments(_comments);
-    _collapsedCommentIds.removeWhere(
-        (id) => !_commentTree.byId.containsKey(id));
     _rebuildVisibleComments();
   }
 
@@ -323,12 +312,7 @@ class _PostScreenState extends State<PostScreen> {
   }
 
   void _toggleCommentBranch(int commentId) {
-    setState(() {
-      if (!_collapsedCommentIds.add(commentId)) {
-        _collapsedCommentIds.remove(commentId);
-      }
-      _rebuildVisibleComments();
-    });
+    _commentsController.toggleCollapse(commentId);
   }
 
   // Threads already bulk-loaded while hunting for a notification's target
@@ -342,59 +326,49 @@ class _PostScreenState extends State<PostScreen> {
   /// its shared [threadId]) until the target comment appears, so scroll-to can
   /// reach it. Bounded, and stops as soon as the target is found.
   Future<bool> _ensureTargetLoaded(int targetId) async {
-    if (_comments.any((c) => c['id'] == targetId)) return true;
-    final settings = context.read<SettingsService>();
-
-    // Loaded direct children per comment id (to tell which branches still
-    // have replies we haven't fetched).
+    if (_comments.any((comment) => comment.id == targetId)) return true;
     final loadedChildren = <int, int>{};
-    for (final c in _comments) {
-      final rt = (c['replyTo'] ?? 0) as int;
-      if (rt != 0) loadedChildren[rt] = (loadedChildren[rt] ?? 0) + 1;
+    for (final comment in _comments) {
+      if (comment.replyTo != 0) {
+        loadedChildren[comment.replyTo] =
+            (loadedChildren[comment.replyTo] ?? 0) + 1;
+      }
     }
-    // Distinct thread ids of branches with still-unloaded replies.
     final threadIds = <String>{};
-    for (final c in _comments) {
-      final tid = c['threadId']?.toString();
-      if (tid == null || tid.isEmpty || _autoLoadedThreads.contains(tid)) {
+    for (final comment in _comments) {
+      final threadId = comment.threadId;
+      if (threadId == null ||
+          threadId.isEmpty ||
+          _autoLoadedThreads.contains(threadId)) {
         continue;
       }
-      final rc = (c['replyCount'] ?? 0) as int;
-      final loaded = loadedChildren[c['id']] ?? 0;
-      if (rc > loaded) threadIds.add(tid);
-    }
-    if (threadIds.isEmpty) return false;
-
-    const cap = 40; // safety bound for pathologically large threads
-    const batch = 8;
-    final list = threadIds.take(cap).toList();
-    for (var i = 0; i < list.length; i += batch) {
-      if (!mounted) return false;
-      final slice = list.skip(i).take(batch).toList();
-      _autoLoadedThreads.addAll(slice);
-      final results = await Future.wait(
-          slice.map((t) => DtfApi.getThread(widget.postId, t, settings)));
-      if (!mounted) return false;
-      var added = false;
-      for (final branch in results) {
-        if (_mergeComments(branch)) added = true;
+      if (comment.replyCount > (loadedChildren[comment.id] ?? 0)) {
+        threadIds.add(threadId);
       }
-      if (added) {
-        _applyArchive(_comments);
-        setState(_rebuildCommentIndex);
-      }
-      if (_comments.any((c) => c['id'] == targetId)) return true;
     }
-    return _comments.any((c) => c['id'] == targetId);
+    for (final threadId in threadIds.take(40)) {
+      if (!mounted) return false;
+      _autoLoadedThreads.add(threadId);
+      await _commentsController.loadThread(widget.postId, threadId);
+      if (_comments.any((comment) => comment.id == targetId)) return true;
+    }
+    _applyArchive(_comments);
+    return _comments.any((comment) => comment.id == targetId);
   }
 
   void _startReply(int commentId, String name) {
-    setState(() { _replyToId = commentId; _replyToName = name; });
+    setState(() {
+      _replyToId = commentId;
+      _replyToName = name;
+    });
     _commentFocus.requestFocus();
   }
 
   void _cancelReply() {
-    setState(() { _replyToId = null; _replyToName = null; });
+    setState(() {
+      _replyToId = null;
+      _replyToName = null;
+    });
   }
 
   Future<void> _sendComment() async {
@@ -403,39 +377,48 @@ class _PostScreenState extends State<PostScreen> {
     final settings = context.read<SettingsService>();
     if (!settings.isLoggedIn) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Войди в аккаунт, чтобы комментировать'),
-            backgroundColor: AppColors.bgElevated),
+        SnackBar(
+          content: Text('Войди в аккаунт, чтобы комментировать'),
+          backgroundColor: AppColors.bgElevated,
+        ),
       );
       return;
     }
     setState(() => _sending = true);
-    final result = await DtfApi.addComment(
-      entryId: widget.postId,
+    final attachments = _attachments
+        .whereType<Map>()
+        .map((item) => Map<String, dynamic>.from(item))
+        .toList(growable: false);
+    final comment = await _commentsController.add(
+      postId: widget.postId,
       text: text,
       replyTo: _replyToId,
-      attachments: _attachments.isEmpty ? null : List.of(_attachments),
-      settings: settings,
+      attachments: attachments,
     );
     if (!mounted) return;
-    if (result['ok'] == true) {
+    setState(() => _sending = false);
+    if (comment != null) {
       _commentController.clear();
       _commentFocus.unfocus();
       setState(() {
-        _sending = false;
         _replyToId = null;
         _replyToName = null;
         _attachments.clear();
       });
-      await _fetchComments();
-      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Комментарий добавлен'), backgroundColor: AppColors.bgElevated),
+        SnackBar(
+          content: Text('Комментарий добавлен'),
+          backgroundColor: AppColors.bgElevated,
+        ),
       );
     } else {
-      setState(() => _sending = false);
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Не удалось: ${result['error'] ?? 'ошибка'}'),
-            backgroundColor: AppColors.bgElevated),
+        SnackBar(
+          content: Text(
+            'Не удалось: ${_commentsController.state.actionFailure?.message ?? 'ошибка'}',
+          ),
+          backgroundColor: AppColors.bgElevated,
+        ),
       );
     }
   }
@@ -455,8 +438,10 @@ class _PostScreenState extends State<PostScreen> {
         _attachments.add(media);
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Не удалось прикрепить GIF'),
-              backgroundColor: AppColors.bgElevated),
+          SnackBar(
+            content: Text('Не удалось прикрепить GIF'),
+            backgroundColor: AppColors.bgElevated,
+          ),
         );
       }
     });
@@ -466,7 +451,10 @@ class _PostScreenState extends State<PostScreen> {
     final settings = context.read<SettingsService>();
     if (!settings.isLoggedIn) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Войди в аккаунт'), backgroundColor: AppColors.bgElevated),
+        SnackBar(
+          content: Text('Войди в аккаунт'),
+          backgroundColor: AppColors.bgElevated,
+        ),
       );
       return;
     }
@@ -482,8 +470,10 @@ class _PostScreenState extends State<PostScreen> {
         _attachments.add(media);
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Не удалось загрузить файл'),
-              backgroundColor: AppColors.bgElevated),
+          SnackBar(
+            content: Text('Не удалось загрузить файл'),
+            backgroundColor: AppColors.bgElevated,
+          ),
         );
       }
     });
@@ -493,7 +483,10 @@ class _PostScreenState extends State<PostScreen> {
     final settings = context.read<SettingsService>();
     if (!settings.isLoggedIn) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Войди в аккаунт'), backgroundColor: AppColors.bgElevated),
+        SnackBar(
+          content: Text('Войди в аккаунт'),
+          backgroundColor: AppColors.bgElevated,
+        ),
       );
       return;
     }
@@ -523,7 +516,10 @@ class _PostScreenState extends State<PostScreen> {
     final settings = context.read<SettingsService>();
     if (!settings.isLoggedIn) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Войди в аккаунт'), backgroundColor: AppColors.bgElevated),
+        SnackBar(
+          content: Text('Войди в аккаунт'),
+          backgroundColor: AppColors.bgElevated,
+        ),
       );
       return;
     }
@@ -558,26 +554,45 @@ class _PostScreenState extends State<PostScreen> {
       context: context,
       backgroundColor: AppColors.bgCard,
       shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
       builder: (ctx) => SafeArea(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             const SizedBox(height: 12),
             ListTile(
-              leading: Icon(Icons.emoji_emotions_outlined, color: AppColors.textPrimary),
-              title: Text('Реакции', style: TextStyle(color: AppColors.textPrimary)),
-              subtitle: const Text('Кто поставил реакцию на пост',
-                  style: TextStyle(color: Colors.grey, fontSize: 12)),
+              leading: Icon(
+                Icons.emoji_emotions_outlined,
+                color: AppColors.textPrimary,
+              ),
+              title: Text(
+                'Реакции',
+                style: TextStyle(color: AppColors.textPrimary),
+              ),
+              subtitle: Text(
+                'Кто поставил реакцию на пост',
+                style: TextStyle(color: Colors.grey, fontSize: 12),
+              ),
               onTap: () {
                 Navigator.pop(ctx);
                 showReactionUsers(
-                    context: context, id: widget.postId, isComment: false, settings: settings);
+                  context: context,
+                  id: widget.postId,
+                  isComment: false,
+                  settings: settings,
+                );
               },
             ),
             ListTile(
-              leading: Icon(Icons.add_reaction_outlined, color: AppColors.textPrimary),
-              title: Text('Поставить реакцию', style: TextStyle(color: AppColors.textPrimary)),
+              leading: Icon(
+                Icons.add_reaction_outlined,
+                color: AppColors.textPrimary,
+              ),
+              title: Text(
+                'Поставить реакцию',
+                style: TextStyle(color: AppColors.textPrimary),
+              ),
               onTap: () {
                 Navigator.pop(ctx);
                 showReactionPicker(context, _reactToPost);
@@ -597,12 +612,12 @@ class _PostScreenState extends State<PostScreen> {
       backgroundColor: AppColors.bgDeep,
       appBar: AppBar(
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back),
+          icon: Icon(Icons.arrow_back),
           onPressed: () => Navigator.pop(context),
         ),
         title: Text(
           _post?.subsite?.name ?? widget.title,
-          style: const TextStyle(fontSize: 15),
+          style: TextStyle(fontSize: 15),
           overflow: TextOverflow.ellipsis,
         ),
         actions: [
@@ -618,7 +633,7 @@ class _PostScreenState extends State<PostScreen> {
             onPressed: _toggleBookmark,
           ),
           IconButton(
-            icon: const Icon(Icons.more_vert),
+            icon: Icon(Icons.more_vert),
             onPressed: _showPostMenu,
           ),
         ],
@@ -632,8 +647,10 @@ class _PostScreenState extends State<PostScreen> {
             curve: Curves.easeOut,
           ),
           backgroundColor: AppColors.bgElevated,
-          child: Icon(Icons.keyboard_arrow_up,
-              color: AppColors.textPrimary),
+          child: Icon(
+            Icons.keyboard_arrow_up,
+            color: AppColors.textPrimary,
+          ),
         ),
       ),
       // Composer lives in the body so resizeToAvoidBottomInset lifts it above
@@ -641,28 +658,28 @@ class _PostScreenState extends State<PostScreen> {
       body: _loadingPost
           ? const Center(child: CircularProgressIndicator())
           : _postFailed
-              ? _buildLoadError()
-              : Column(
-                  children: [
-                    Expanded(
-                      child: CustomScrollView(
-                        controller: _scrollController,
-                        slivers: [
-                          SliverToBoxAdapter(child: _buildPostHeader()),
-                          const SliverToBoxAdapter(child: Divider(height: 1)),
-                          SliverToBoxAdapter(child: _buildPostBody()),
-                          SliverToBoxAdapter(child: _buildReactions()),
-                          SliverToBoxAdapter(child: _buildStats()),
-                          const SliverToBoxAdapter(child: Divider()),
-                          SliverToBoxAdapter(child: _buildCommentsHeader()),
-                          ..._buildCommentSlivers(),
-                          const SliverToBoxAdapter(child: SizedBox(height: 16)),
-                        ],
-                      ),
-                    ),
-                    _buildComposer(),
-                  ],
+          ? _buildLoadError()
+          : Column(
+              children: [
+                Expanded(
+                  child: CustomScrollView(
+                    controller: _scrollController,
+                    slivers: [
+                      SliverToBoxAdapter(child: _buildPostHeader()),
+                      const SliverToBoxAdapter(child: Divider(height: 1)),
+                      SliverToBoxAdapter(child: _buildPostBody()),
+                      SliverToBoxAdapter(child: _buildReactions()),
+                      SliverToBoxAdapter(child: _buildStats()),
+                      const SliverToBoxAdapter(child: Divider()),
+                      SliverToBoxAdapter(child: _buildCommentsHeader()),
+                      ..._buildCommentSlivers(),
+                      const SliverToBoxAdapter(child: SizedBox(height: 16)),
+                    ],
+                  ),
                 ),
+                _buildComposer(),
+              ],
+            ),
     );
   }
 
@@ -675,12 +692,16 @@ class _PostScreenState extends State<PostScreen> {
           children: [
             Icon(Icons.cloud_off, color: AppColors.textMuted, size: 56),
             const SizedBox(height: 16),
-            Text('Не удалось загрузить пост',
-                style: TextStyle(color: AppColors.textPrimary, fontSize: 16)),
+            Text(
+              'Не удалось загрузить пост',
+              style: TextStyle(color: AppColors.textPrimary, fontSize: 16),
+            ),
             const SizedBox(height: 8),
-            Text('Проверь соединение или попробуй ещё раз',
-                textAlign: TextAlign.center,
-                style: TextStyle(color: AppColors.textSecondary, fontSize: 13)),
+            Text(
+              'Проверь соединение или попробуй ещё раз',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: AppColors.textSecondary, fontSize: 13),
+            ),
             const SizedBox(height: 20),
             ElevatedButton(
               onPressed: _fetchPost,
@@ -688,7 +709,7 @@ class _PostScreenState extends State<PostScreen> {
                 backgroundColor: Theme.of(context).colorScheme.primary,
                 foregroundColor: Colors.white,
               ),
-              child: const Text('Повторить'),
+              child: Text('Повторить'),
             ),
           ],
         ),
@@ -703,31 +724,46 @@ class _PostScreenState extends State<PostScreen> {
     final date = post.date;
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
-      child: Row(children: [
-        Avatar.fromData(
-          author?.avatar,
-          size: 42,
-          onTap: () => openUserProfile(context, author?.rawJson),
-        ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            GestureDetector(
-              onTap: () => openUserProfile(context, author?.rawJson),
-              child: Row(children: [
-                Text(author?.name ?? '',
-                    style: TextStyle(
-                        color: AppColors.textPrimary, fontWeight: FontWeight.bold, fontSize: 15)),
-                AuthorBadge(author: author?.rawJson, size: 14),
-              ]),
+      child: Row(
+        children: [
+          Avatar.fromData(
+            author?.avatar,
+            size: 42,
+            onTap: () => openUserProfile(context, author?.rawJson),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                GestureDetector(
+                  onTap: () => openUserProfile(context, author?.rawJson),
+                  child: Row(
+                    children: [
+                      Text(
+                        author?.name ?? '',
+                        style: TextStyle(
+                          color: AppColors.textPrimary,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 15,
+                        ),
+                      ),
+                      AuthorBadge(author: author?.rawJson, size: 14),
+                    ],
+                  ),
+                ),
+                Text(
+                  _formatDate(date),
+                  style: TextStyle(
+                    color: AppColors.textMuted,
+                    fontSize: 12,
+                  ),
+                ),
+              ],
             ),
-            Text(
-              _formatDate(date),
-              style: TextStyle(color: AppColors.textMuted, fontSize: 12),
-            ),
-          ]),
-        ),
-      ]),
+          ),
+        ],
+      ),
     );
   }
 
@@ -735,10 +771,9 @@ class _PostScreenState extends State<PostScreen> {
     final post = _post;
     if (post == null) return const SizedBox();
     final myReaction = post.reactions.selectedId;
-    final reactions = post.reactions.counters
-        .where((reaction) => reaction.count > 0)
-        .toList()
-      ..sort((a, b) => b.count.compareTo(a.count));
+    final reactions =
+        post.reactions.counters.where((reaction) => reaction.count > 0).toList()
+          ..sort((a, b) => b.count.compareTo(a.count));
 
     final accent = Theme.of(context).colorScheme.primary;
     return Padding(
@@ -752,38 +787,42 @@ class _PostScreenState extends State<PostScreen> {
             return BurstTap(
               onTap: () => _reactToPost(r.id),
               onLongPress: () => showReactionUsers(
-                  context: context,
-                  id: widget.postId,
-                  isComment: false,
-                  settings: context.read<SettingsService>()),
+                context: context,
+                id: widget.postId,
+                isComment: false,
+                settings: context.read<SettingsService>(),
+              ),
               burstColor: accent,
               scale: 0.90,
               child: AnimatedContainer(
                 duration: const Duration(milliseconds: 200),
                 curve: Curves.easeOut,
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 6,
+                ),
                 decoration: BoxDecoration(
                   color: mine
                       ? accent.withValues(alpha: 0.18)
                       : AppColors.bgElevated,
                   borderRadius: BorderRadius.circular(20),
-                  border:
-                      mine ? Border.all(color: accent, width: 1.5) : null,
+                  border: mine ? Border.all(color: accent, width: 1.5) : null,
                 ),
-                child: Row(mainAxisSize: MainAxisSize.min, children: [
-                  ReactionIcon(
-                    id: r.id,
-                    size: 18,
-                    animated: false,
-                  ),
-                  const SizedBox(width: 6),
-                  Text('${r.count}',
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    ReactionIcon(id: r.id, size: 18, animated: false),
+                    const SizedBox(width: 6),
+                    Text(
+                      '${r.count}',
                       style: TextStyle(
-                          color: AppColors.textPrimary,
-                          fontSize: 14,
-                          fontWeight: FontWeight.bold)),
-                ]),
+                        color: AppColors.textPrimary,
+                        fontSize: 14,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
+                ),
               ),
             );
           }),
@@ -799,22 +838,42 @@ class _PostScreenState extends State<PostScreen> {
     final counters = post.counters;
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-      child: Row(children: [
-        Icon(Icons.remove_red_eye_outlined, size: 15, color: AppColors.textMuted),
-        const SizedBox(width: 4),
-        Text('${counters.hits}',
-            style: TextStyle(color: AppColors.textMuted, fontSize: 13)),
-        const SizedBox(width: 16),
-        Icon(Icons.bookmark_border, size: 15, color: AppColors.textMuted),
-        const SizedBox(width: 4),
-        Text('${counters.favorites}',
-            style: TextStyle(color: AppColors.textMuted, fontSize: 13)),
-        const SizedBox(width: 16),
-        Icon(Icons.chat_bubble_outline, size: 15, color: AppColors.textMuted),
-        const SizedBox(width: 4),
-        Text('${counters.comments}',
-            style: TextStyle(color: AppColors.textMuted, fontSize: 13)),
-      ]),
+      child: Row(
+        children: [
+          Icon(
+            Icons.remove_red_eye_outlined,
+            size: 15,
+            color: AppColors.textMuted,
+          ),
+          const SizedBox(width: 4),
+          Text(
+            '${counters.hits}',
+            style: TextStyle(color: AppColors.textMuted, fontSize: 13),
+          ),
+          const SizedBox(width: 16),
+          Icon(
+            Icons.bookmark_border,
+            size: 15,
+            color: AppColors.textMuted,
+          ),
+          const SizedBox(width: 4),
+          Text(
+            '${counters.favorites}',
+            style: TextStyle(color: AppColors.textMuted, fontSize: 13),
+          ),
+          const SizedBox(width: 16),
+          Icon(
+            Icons.chat_bubble_outline,
+            size: 15,
+            color: AppColors.textMuted,
+          ),
+          const SizedBox(width: 4),
+          Text(
+            '${counters.comments}',
+            style: TextStyle(color: AppColors.textMuted, fontSize: 13),
+          ),
+        ],
+      ),
     );
   }
 
@@ -828,10 +887,11 @@ class _PostScreenState extends State<PostScreen> {
           Text.rich(
             TextSpan(
               style: TextStyle(
-                  color: AppColors.textPrimary,
-                  fontSize: 22,
-                  fontWeight: FontWeight.bold,
-                  height: 1.3),
+                color: AppColors.textPrimary,
+                fontSize: 22,
+                fontWeight: FontWeight.bold,
+                height: 1.3,
+              ),
               children: [
                 TextSpan(text: _post?.title ?? widget.title),
                 if (_post?.isEditorial == true) ...[
@@ -858,21 +918,36 @@ class _PostScreenState extends State<PostScreen> {
       children: [
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-          child: Row(children: [
-            Text('Комментарии',
-                style: TextStyle(color: AppColors.textPrimary, fontSize: 18, fontWeight: FontWeight.bold)),
-            const SizedBox(width: 8),
-            Text('(${_comments.length})',
-                style: TextStyle(color: AppColors.textMuted, fontSize: 15)),
-          ]),
+          child: Row(
+            children: [
+              Text(
+                'Комментарии',
+                style: TextStyle(
+                  color: AppColors.textPrimary,
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                '(${_comments.length})',
+                style: TextStyle(
+                  color: AppColors.textMuted,
+                  fontSize: 15,
+                ),
+              ),
+            ],
+          ),
         ),
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-          child: Row(children: [
-            _commentSortChip('Популярные', 'hotness'),
-            const SizedBox(width: 8),
-            _commentSortChip('Новые', 'date'),
-          ]),
+          child: Row(
+            children: [
+              _commentSortChip('Популярные', 'hotness'),
+              const SizedBox(width: 8),
+              _commentSortChip('Новые', 'date'),
+            ],
+          ),
         ),
       ],
     );
@@ -883,7 +958,12 @@ class _PostScreenState extends State<PostScreen> {
     if (_loadingComments) {
       return [
         const SliverToBoxAdapter(
-          child: Center(child: Padding(padding: EdgeInsets.all(24), child: CircularProgressIndicator())),
+          child: Center(
+            child: Padding(
+              padding: EdgeInsets.all(24),
+              child: CircularProgressIndicator(),
+            ),
+          ),
         ),
       ];
     }
@@ -892,7 +972,12 @@ class _PostScreenState extends State<PostScreen> {
         SliverToBoxAdapter(
           child: Padding(
             padding: EdgeInsets.all(24),
-            child: Center(child: Text('Комментариев нет', style: TextStyle(color: AppColors.textMuted))),
+            child: Center(
+              child: Text(
+                'Комментариев нет',
+                style: TextStyle(color: AppColors.textMuted),
+              ),
+            ),
           ),
         ),
       ];
@@ -901,28 +986,24 @@ class _PostScreenState extends State<PostScreen> {
       SliverPadding(
         padding: const EdgeInsets.symmetric(horizontal: 16),
         sliver: SliverList(
-          delegate: SliverChildBuilderDelegate(
-            (ctx, i) {
-              final row = _visibleComments[i];
-              final id = row.comment['id'] as int? ?? -1;
-              return CommentRow(
-                key: ValueKey(id),
-                row: row,
-                onReply: (commentId, name) =>
-                    _startReply(commentId, name),
-                onReactionChanged: _fetchComments,
-                onToggleCollapse: row.hasChildren
-                    ? () => _toggleCommentBranch(id)
-                    : null,
-                branchCollapsed: _collapsedCommentIds.contains(id),
-                onLoadThread: _loadThread,
-                loadingThreadIds: _loadingThreads,
-                highlightCommentId: widget.scrollToCommentId,
-                highlightKey: _targetCommentKey,
-              );
-            },
-            childCount: _visibleComments.length,
-          ),
+          delegate: SliverChildBuilderDelegate((ctx, i) {
+            final row = _visibleComments[i];
+            final id = row.comment.id;
+            return CommentRow(
+              key: ValueKey(id),
+              row: row,
+              onReply: (commentId, name) => _startReply(commentId, name),
+              onReactionChanged: _fetchComments,
+              onToggleCollapse: row.hasChildren
+                  ? () => _toggleCommentBranch(id)
+                  : null,
+              branchCollapsed: _collapsedCommentIds.contains(id),
+              onLoadThread: _loadThread,
+              loadingThreadIds: _loadingThreads,
+              highlightCommentId: widget.scrollToCommentId,
+              highlightKey: _targetCommentKey,
+            );
+          }, childCount: _visibleComments.length),
         ),
       ),
     ];
@@ -938,9 +1019,7 @@ class _PostScreenState extends State<PostScreen> {
         duration: const Duration(milliseconds: 200),
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
         decoration: BoxDecoration(
-          color: active
-              ? accent.withValues(alpha: 0.18)
-              : AppColors.bgCard,
+          color: active ? accent.withValues(alpha: 0.18) : AppColors.bgCard,
           borderRadius: BorderRadius.circular(16),
           border: active ? Border.all(color: accent, width: 1) : null,
         ),
@@ -949,8 +1028,7 @@ class _PostScreenState extends State<PostScreen> {
           style: TextStyle(
             color: active ? accent : AppColors.textMuted,
             fontSize: 12,
-            fontWeight:
-                active ? FontWeight.bold : FontWeight.normal,
+            fontWeight: active ? FontWeight.bold : FontWeight.normal,
           ),
         ),
       ),
@@ -963,9 +1041,11 @@ class _PostScreenState extends State<PostScreen> {
       decoration: BoxDecoration(
         color: AppColors.bgCard,
         border: Border(
-            top: BorderSide(
-                color: Colors.white.withValues(alpha: 0.07),
-                width: 0.5)),
+          top: BorderSide(
+            color: Colors.white.withValues(alpha: 0.07),
+            width: 0.5,
+          ),
+        ),
       ),
       child: SafeArea(
         top: false,
@@ -977,20 +1057,27 @@ class _PostScreenState extends State<PostScreen> {
                 width: double.infinity,
                 padding: const EdgeInsets.fromLTRB(16, 6, 8, 6),
                 color: AppColors.bgDeep,
-                child: Row(children: [
-                  Icon(Icons.reply, size: 14, color: accent),
-                  const SizedBox(width: 6),
-                  Expanded(
-                    child: Text('Ответ для $_replyToName',
+                child: Row(
+                  children: [
+                    Icon(Icons.reply, size: 14, color: accent),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        'Ответ для $_replyToName',
                         style: TextStyle(color: accent, fontSize: 12),
-                        overflow: TextOverflow.ellipsis),
-                  ),
-                  GestureDetector(
-                    onTap: _cancelReply,
-                    child: Icon(Icons.close,
-                        size: 16, color: AppColors.textMuted),
-                  ),
-                ]),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    GestureDetector(
+                      onTap: _cancelReply,
+                      child: Icon(
+                        Icons.close,
+                        size: 16,
+                        color: AppColors.textMuted,
+                      ),
+                    ),
+                  ],
+                ),
               ),
             // Attachment previews
             if (_attachments.isNotEmpty || _attaching)
@@ -1010,21 +1097,43 @@ class _PostScreenState extends State<PostScreen> {
                               borderRadius: BorderRadius.circular(8),
                               child: CachedNetworkImage(
                                 imageUrl: OsnovaImage(uuid).preview(120),
-                                width: 64, height: 64, fit: BoxFit.cover,
-                                placeholder: (_, _) => Container(width: 64, height: 64, color: AppColors.bgElevated),
+                                width: 64,
+                                height: 64,
+                                fit: BoxFit.cover,
+                                placeholder: (_, _) => Container(
+                                  width: 64,
+                                  height: 64,
+                                  color: AppColors.bgElevated,
+                                ),
                                 errorWidget: (_, _, _) => Container(
-                                  width: 64, height: 64, color: AppColors.bgElevated,
-                                  child: const Icon(Icons.image, color: Colors.grey, size: 20),
+                                  width: 64,
+                                  height: 64,
+                                  color: AppColors.bgElevated,
+                                  child: Icon(
+                                    Icons.image,
+                                    color: Colors.grey,
+                                    size: 20,
+                                  ),
                                 ),
                               ),
                             ),
                             Positioned(
-                              right: 2, top: 2,
+                              right: 2,
+                              top: 2,
                               child: GestureDetector(
-                                onTap: () => setState(() => _attachments.removeAt(e.key)),
+                                onTap: () => setState(
+                                  () => _attachments.removeAt(e.key),
+                                ),
                                 child: Container(
-                                  decoration: const BoxDecoration(color: Colors.black54, shape: BoxShape.circle),
-                                  child: const Icon(Icons.close, color: Colors.white, size: 16),
+                                  decoration: const BoxDecoration(
+                                    color: Colors.black54,
+                                    shape: BoxShape.circle,
+                                  ),
+                                  child: Icon(
+                                    Icons.close,
+                                    color: Colors.white,
+                                    size: 16,
+                                  ),
                                 ),
                               ),
                             ),
@@ -1034,11 +1143,18 @@ class _PostScreenState extends State<PostScreen> {
                     }),
                     if (_attaching)
                       Container(
-                        width: 64, height: 64,
+                        width: 64,
+                        height: 64,
                         decoration: BoxDecoration(
-                          color: AppColors.bgElevated, borderRadius: BorderRadius.circular(8)),
+                          color: AppColors.bgElevated,
+                          borderRadius: BorderRadius.circular(8),
+                        ),
                         child: const Center(
-                          child: SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2)),
+                          child: SizedBox(
+                            width: 22,
+                            height: 22,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          ),
                         ),
                       ),
                   ],
@@ -1046,60 +1162,87 @@ class _PostScreenState extends State<PostScreen> {
               ),
             Padding(
               padding: const EdgeInsets.fromLTRB(8, 8, 8, 8),
-              child: Row(children: [
-                GestureDetector(
-                  onTap: _attachGif,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-                    decoration: BoxDecoration(
-                      color: AppColors.bgElevated,
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Text('GIF',
-                        style: TextStyle(color: accent, fontWeight: FontWeight.bold, fontSize: 13)),
-                  ),
-                ),
-                const SizedBox(width: 6),
-                IconButton(
-                  padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
-                  icon: Icon(Icons.image_outlined, color: AppColors.textMuted),
-                  onPressed: _attachFromGallery,
-                ),
-                const SizedBox(width: 4),
-                Expanded(
-                  child: TextField(
-                    controller: _commentController,
-                    focusNode: _commentFocus,
-                    style: TextStyle(color: AppColors.textPrimary, fontSize: 14),
-                    minLines: 1,
-                    maxLines: 5,
-                    textCapitalization: TextCapitalization.sentences,
-                    decoration: InputDecoration(
-                      hintText: 'Комментарий...',
-                      hintStyle: TextStyle(color: AppColors.textMuted),
-                      filled: true,
-                      fillColor: AppColors.bgElevated,
-                      isDense: true,
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(20),
-                        borderSide: BorderSide.none,
+              child: Row(
+                children: [
+                  GestureDetector(
+                    onTap: _attachGif,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 6,
+                      ),
+                      decoration: BoxDecoration(
+                        color: AppColors.bgElevated,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        'GIF',
+                        style: TextStyle(
+                          color: accent,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 13,
+                        ),
                       ),
                     ),
                   ),
-                ),
-                const SizedBox(width: 4),
-                _sending
-                    ? const Padding(
-                        padding: EdgeInsets.all(10),
-                        child: SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2)),
-                      )
-                    : IconButton(
-                        icon: Icon(Icons.send, color: accent),
-                        onPressed: _sendComment,
+                  const SizedBox(width: 6),
+                  IconButton(
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(
+                      minWidth: 36,
+                      minHeight: 36,
+                    ),
+                    icon: Icon(
+                      Icons.image_outlined,
+                      color: AppColors.textMuted,
+                    ),
+                    onPressed: _attachFromGallery,
+                  ),
+                  const SizedBox(width: 4),
+                  Expanded(
+                    child: TextField(
+                      controller: _commentController,
+                      focusNode: _commentFocus,
+                      style: TextStyle(
+                        color: AppColors.textPrimary,
+                        fontSize: 14,
                       ),
-              ]),
+                      minLines: 1,
+                      maxLines: 5,
+                      textCapitalization: TextCapitalization.sentences,
+                      decoration: InputDecoration(
+                        hintText: 'Комментарий...',
+                        hintStyle: const TextStyle(color: AppColors.textMuted),
+                        filled: true,
+                        fillColor: AppColors.bgElevated,
+                        isDense: true,
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 10,
+                        ),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(20),
+                          borderSide: BorderSide.none,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 4),
+                  _sending
+                      ? const Padding(
+                          padding: EdgeInsets.all(10),
+                          child: SizedBox(
+                            width: 22,
+                            height: 22,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          ),
+                        )
+                      : IconButton(
+                          icon: Icon(Icons.send, color: accent),
+                          onPressed: _sendComment,
+                        ),
+                ],
+              ),
             ),
           ],
         ),
@@ -1110,10 +1253,19 @@ class _PostScreenState extends State<PostScreen> {
   String _formatDate(DateTime? date) {
     if (date == null) return '';
     const months = [
-      'янв', 'фев', 'мар', 'апр', 'май', 'июн',
-      'июл', 'авг', 'сен', 'окт', 'ноя', 'дек'
+      'янв',
+      'фев',
+      'мар',
+      'апр',
+      'май',
+      'июн',
+      'июл',
+      'авг',
+      'сен',
+      'окт',
+      'ноя',
+      'дек',
     ];
     return '${date.day} ${months[date.month - 1]} ${date.year}, ${date.hour}:${date.minute.toString().padLeft(2, '0')}';
   }
 }
-

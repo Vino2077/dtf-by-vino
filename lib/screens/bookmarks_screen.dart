@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../api/dtf_api.dart';
+import '../models/comment.dart';
 import '../models/post.dart';
 import '../services/settings_service.dart';
 import '../theme.dart';
@@ -15,13 +16,11 @@ class BookmarksScreen extends StatefulWidget {
   State<BookmarksScreen> createState() => _BookmarksScreenState();
 }
 
-class _BookmarksScreenState extends State<BookmarksScreen> with SingleTickerProviderStateMixin {
+class _BookmarksScreenState extends State<BookmarksScreen>
+    with SingleTickerProviderStateMixin {
   late TabController _tabController;
 
-  final _tabs = [
-    ('posts', 'Посты'),
-    ('comments', 'Комментарии'),
-  ];
+  final _tabs = [('posts', 'Посты'), ('comments', 'Комментарии')];
 
   @override
   void initState() {
@@ -67,7 +66,8 @@ class _BookmarksList extends StatefulWidget {
   State<_BookmarksList> createState() => _BookmarksListState();
 }
 
-class _BookmarksListState extends State<_BookmarksList> with AutomaticKeepAliveClientMixin {
+class _BookmarksListState extends State<_BookmarksList>
+    with AutomaticKeepAliveClientMixin {
   List<dynamic> _commentItems = [];
   List<Post> _posts = [];
   bool _loading = true;
@@ -122,14 +122,18 @@ class _BookmarksListState extends State<_BookmarksList> with AutomaticKeepAliveC
   Widget build(BuildContext context) {
     super.build(context);
     if (_loading) return const Center(child: CircularProgressIndicator());
-    final itemCount = widget.type == 'posts' ? _posts.length : _commentItems.length;
+    final itemCount = widget.type == 'posts'
+        ? _posts.length
+        : _commentItems.length;
     if (itemCount == 0) {
       return RefreshIndicator(
         onRefresh: _load,
         child: ListView(
           children: const [
             SizedBox(height: 180),
-            Center(child: Text('Пусто', style: TextStyle(color: Colors.grey))),
+            Center(
+              child: Text('Пусто', style: TextStyle(color: Colors.grey)),
+            ),
           ],
         ),
       );
@@ -153,19 +157,21 @@ class _BookmarksListState extends State<_BookmarksList> with AutomaticKeepAliveC
               child: GestureDetector(
                 onTap: postId != null
                     ? () => Navigator.push(
-                          ctx,
-                          MaterialPageRoute(
-                            builder: (_) => PostScreen(
-                              postId: postId,
-                              title: data['entry']?['title'] ?? '',
-                              scrollToCommentId: commentId,
-                            ),
+                        ctx,
+                        MaterialPageRoute(
+                          builder: (_) => PostScreen(
+                            postId: postId,
+                            title: data['entry']?['title'] ?? '',
+                            scrollToCommentId: commentId,
                           ),
-                        )
+                        ),
+                      )
                     : null,
                 child: CommentWidget(
                   key: ValueKey(data['id']),
-                  comment: data,
+                  comment: Comment.fromJson(
+                    Map<String, dynamic>.from(data as Map),
+                  ),
                 ),
               ),
             );

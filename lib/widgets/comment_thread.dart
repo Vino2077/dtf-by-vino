@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
+
+import '../models/comment.dart';
 import 'comment_widget.dart';
 
-/// A comment prepared for rendering as one lazy sliver child.
 class VisibleComment {
-  final dynamic comment;
+  final Comment comment;
   final int depth;
   final int loadedDescendantCount;
   final bool hasChildren;
@@ -16,15 +17,10 @@ class VisibleComment {
   });
 }
 
-/// Precomputed tree metadata for a flat API comment list.
-///
-/// Building descendant counts once avoids the old recursive count from every
-/// rendered node, while [flatten] makes every visible comment its own sliver
-/// child instead of eagerly rendering a whole root branch in one Column.
 class CommentTreeIndex {
-  final List<dynamic> roots;
-  final Map<int, dynamic> byId;
-  final Map<int, List<dynamic>> childrenByParent;
+  final List<Comment> roots;
+  final Map<int, Comment> byId;
+  final Map<int, List<Comment>> childrenByParent;
   final Map<int, int> descendantCounts;
 
   const CommentTreeIndex._({
@@ -34,39 +30,30 @@ class CommentTreeIndex {
     required this.descendantCounts,
   });
 
-  factory CommentTreeIndex.fromComments(List<dynamic> comments) {
-    final byId = <int, dynamic>{};
+  factory CommentTreeIndex.fromComments(List<Comment> comments) {
+    final byId = <int, Comment>{
+      for (final comment in comments) comment.id: comment,
+    };
+    final roots = <Comment>[];
+    final childrenByParent = <int, List<Comment>>{};
     for (final comment in comments) {
-      final id = comment['id'] as int?;
-      if (id != null) byId[id] = comment;
-    }
-
-    final roots = <dynamic>[];
-    final childrenByParent = <int, List<dynamic>>{};
-    for (final comment in comments) {
-      final replyTo = (comment['replyTo'] ?? 0) as int;
-      if (replyTo == 0 || !byId.containsKey(replyTo)) {
+      if (comment.replyTo == 0 || !byId.containsKey(comment.replyTo)) {
         roots.add(comment);
       } else {
-        (childrenByParent[replyTo] ??= []).add(comment);
+        (childrenByParent[comment.replyTo] ??= []).add(comment);
       }
     }
 
     final descendantCounts = <int, int>{};
     final visiting = <int>{};
-
     int countDescendants(int id) {
       final cached = descendantCounts[id];
       if (cached != null) return cached;
       if (!visiting.add(id)) return 0;
-
       var count = 0;
       for (final child in childrenByParent[id] ?? const []) {
-        count++;
-        final childId = child['id'] as int?;
-        if (childId != null) count += countDescendants(childId);
+        count += 1 + countDescendants(child.id);
       }
-
       visiting.remove(id);
       descendantCounts[id] = count;
       return count;
@@ -75,7 +62,6 @@ class CommentTreeIndex {
     for (final id in byId.keys) {
       countDescendants(id);
     }
-
     return CommentTreeIndex._(
       roots: roots,
       byId: byId,
@@ -88,29 +74,27 @@ class CommentTreeIndex {
     Set<int> collapsedIds = const {},
     int? promoteCommentId,
   }) {
-    final orderedRoots = List<dynamic>.from(roots);
+    final orderedRoots = List<Comment>.from(roots);
     if (promoteCommentId != null) {
       final rootId = _rootIdFor(promoteCommentId);
-      final index = orderedRoots.indexWhere((root) => root['id'] == rootId);
+      final index = orderedRoots.indexWhere((root) => root.id == rootId);
       if (index > 0) orderedRoots.insert(0, orderedRoots.removeAt(index));
     }
 
     final visible = <VisibleComment>[];
     final visited = <int>{};
-
-    void append(dynamic comment, int depth) {
-      final id = comment['id'] as int?;
-      if (id == null || !visited.add(id)) return;
-      final children = childrenByParent[id] ?? const [];
+    void append(Comment comment, int depth) {
+      if (!visited.add(comment.id)) return;
+      final children = childrenByParent[comment.id] ?? const [];
       visible.add(
         VisibleComment(
           comment: comment,
           depth: depth,
-          loadedDescendantCount: descendantCounts[id] ?? 0,
+          loadedDescendantCount: descendantCounts[comment.id] ?? 0,
           hasChildren: children.isNotEmpty,
         ),
       );
-      if (collapsedIds.contains(id)) return;
+      if (collapsedIds.contains(comment.id)) return;
       for (final child in children) {
         append(child, depth + 1);
       }
@@ -123,21 +107,18 @@ class CommentTreeIndex {
   }
 
   int? _rootIdFor(int commentId) {
-    dynamic current = byId[commentId];
+    var current = byId[commentId];
     if (current == null) return null;
-
     var guard = 0;
-    while ((current['replyTo'] ?? 0) != 0 && guard++ < 100) {
-      final parent = byId[current['replyTo']];
+    while (current!.replyTo != 0 && guard++ < 100) {
+      final parent = byId[current.replyTo];
       if (parent == null) break;
       current = parent;
     }
-    return current['id'] as int?;
+    return current.id;
   }
 }
 
-/// One comment row in the lazy sliver, including its optional "show replies"
-/// action and target highlight.
 class CommentRow extends StatefulWidget {
   final VisibleComment row;
   final void Function(int commentId, String authorName)? onReply;
@@ -168,8 +149,7 @@ class CommentRow extends StatefulWidget {
 
 class _CommentRowState extends State<CommentRow> {
   bool _highlight = false;
-
-  int get _id => widget.row.comment['id'] as int? ?? -1;
+  int get _id => widget.row.comment.id;
 
   @override
   void initState() {
@@ -185,9 +165,8 @@ class _CommentRowState extends State<CommentRow> {
   @override
   Widget build(BuildContext context) {
     final comment = widget.row.comment;
-    final threadId = comment['threadId']?.toString();
-    final replyCount = (comment['replyCount'] ?? 0) as int;
-    final missing = replyCount - widget.row.loadedDescendantCount;
+    final threadId = comment.threadId;
+    final missing = comment.replyCount - widget.row.loadedDescendantCount;
     final isLoading =
         threadId != null && widget.loadingThreadIds.contains(threadId);
     final isTarget = _id == widget.highlightCommentId;
@@ -212,7 +191,7 @@ class _CommentRowState extends State<CommentRow> {
             onReactionChanged: widget.onReactionChanged,
             onReply: widget.onReply == null
                 ? null
-                : () => widget.onReply!(_id, comment['author']?['name'] ?? ''),
+                : () => widget.onReply!(_id, comment.author?.name ?? ''),
             onToggleCollapse: widget.row.hasChildren
                 ? widget.onToggleCollapse
                 : null,
@@ -272,13 +251,10 @@ class _CommentRowState extends State<CommentRow> {
 String _repliesLabel(int count) {
   final mod10 = count % 10;
   final mod100 = count % 100;
-  String word;
-  if (mod10 == 1 && mod100 != 11) {
-    word = 'ответ';
-  } else if (mod10 >= 2 && mod10 <= 4 && (mod100 < 10 || mod100 >= 20)) {
-    word = 'ответа';
-  } else {
-    word = 'ответов';
-  }
+  final word = mod10 == 1 && mod100 != 11
+      ? 'ответ'
+      : mod10 >= 2 && mod10 <= 4 && (mod100 < 10 || mod100 >= 20)
+      ? 'ответа'
+      : 'ответов';
   return '$count $word';
 }

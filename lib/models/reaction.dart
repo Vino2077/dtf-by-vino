@@ -38,6 +38,13 @@ class PostReactions {
   final int selectedId;
   final List<ReactionCounter> counters;
 
+  Map<String, dynamic> toJson() => {
+    'reactionId': selectedId,
+    'counters': counters
+        .map((counter) => {'id': counter.id, 'count': counter.count})
+        .toList(growable: false),
+  };
+
   PostReactions toggle(int tappedId) {
     final updated = <int, int>{
       for (final counter in counters) counter.id: counter.count,

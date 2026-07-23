@@ -6,6 +6,8 @@ import 'package:http/http.dart' as http;
 import 'api/dtf_api.dart';
 import 'core/api/api_client.dart';
 import 'core/api/http_api_client.dart';
+import 'features/comments/data/comments_repository.dart';
+import 'features/comments/data/dtf_comments_repository.dart';
 import 'features/feed/data/dtf_feed_repository.dart';
 import 'features/feed/data/feed_repository.dart';
 import 'features/posts/data/dtf_post_repository.dart';
@@ -63,6 +65,9 @@ void main() async {
         ),
         Provider<PostRepository>(
           create: (context) => DtfPostRepository(context.read<ApiClient>()),
+        ),
+        Provider<CommentsRepository>(
+          create: (context) => DtfCommentsRepository(context.read<ApiClient>()),
         ),
       ],
       child: const DtfApp(),
