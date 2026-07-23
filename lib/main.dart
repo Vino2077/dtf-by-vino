@@ -76,7 +76,10 @@ void main() async {
         Provider<UploadApiClient>(
           create: (context) => context.read<ApiClient>() as UploadApiClient,
         ),
-        Provider<AuthRepository>(create: (_) => const DtfAuthRepository()),
+        Provider<AuthRepository>(
+          create: (_) => DtfAuthRepository(http.Client()),
+          dispose: (_, repository) => repository.close(),
+        ),
         Provider<EditorRepository>(
           create: (context) => DtfEditorRepository(
             context.read<ApiClient>(),

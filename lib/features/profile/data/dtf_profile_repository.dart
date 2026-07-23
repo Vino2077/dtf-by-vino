@@ -113,9 +113,13 @@ class DtfProfileRepository implements ProfileRepository {
     int subsiteId, {
     required bool value,
   }) async {
-    final result = await _api.postMultipart(
-      'subscribe/toggle',
-      fields: {'id': '$subsiteId', 'type': '3', 'action': value ? '1' : '0'},
+    final result = await _api.postJson(
+      'subsite/subscription',
+      body: {
+        'id': subsiteId,
+        'action': value ? 'subscribe' : 'unsubscribe',
+        'isSubscribedToNotifications': false,
+      },
     );
     return _void(result);
   }

@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../features/chat/data/chat_repository.dart';
 import '../features/chat/presentation/chat_controller.dart';
+import '../models/channel.dart';
 import '../services/settings_service.dart';
 import '../theme.dart';
 import '../util/osnova_image.dart';
@@ -15,7 +16,7 @@ import '../widgets/avatar.dart';
 /// open). Instant delivery via the Socket.IO `m:{mHash}` channel is a planned
 /// follow-up. Swipe a bubble to reply to it.
 class ChatScreen extends StatefulWidget {
-  final dynamic channel;
+  final Channel channel;
   const ChatScreen({super.key, required this.channel});
 
   @override
@@ -32,14 +33,14 @@ class _ChatScreenState extends State<ChatScreen> {
   bool get _loadingOlder => _controller.isLoadingMore;
   bool _hasOlder = true;
   bool get _sending => _controller.isSending;
-  dynamic _replyTo; // the message being replied to, or null
+  Map<String, dynamic>? _replyTo; // the message being replied to, or null
 
   final _ctrl = TextEditingController();
   final _scroll = ScrollController();
   final _focus = FocusNode();
   Timer? _poll;
 
-  int get _channelId => int.tryParse('${widget.channel['id']}') ?? 0;
+  int get _channelId => widget.channel.id;
 
   @override
   void initState() {
@@ -126,7 +127,7 @@ class _ChatScreenState extends State<ChatScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final pic = widget.channel['pictureData'];
+    final pic = widget.channel.rawJson['pictureData'];
     return Scaffold(
       backgroundColor: AppColors.bgDeep,
       appBar: AppBar(
@@ -145,7 +146,7 @@ class _ChatScreenState extends State<ChatScreen> {
             const SizedBox(width: 10),
             Expanded(
               child: Text(
-                widget.channel['title'] ?? '',
+                widget.channel.rawJson['title'] ?? '',
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
@@ -238,7 +239,7 @@ class _ChatScreenState extends State<ChatScreen> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            _replyTo['author']?['title'] ?? '',
+                            _replyTo!['author']?['title'] ?? '',
                             style: TextStyle(
                               color: accent,
                               fontSize: 12,
@@ -246,7 +247,7 @@ class _ChatScreenState extends State<ChatScreen> {
                             ),
                           ),
                           Text(
-                            (_replyTo['text'] ?? '📷 Вложение').toString(),
+                            (_replyTo!['text'] ?? '📷 Вложение').toString(),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: TextStyle(

@@ -32,6 +32,19 @@ class _Api implements ApiClient {
   }
 
   @override
+  Future<Result<Object?>> postJson(
+    String path, {
+    String? apiVersion,
+    Map<String, Object?> body = const {},
+  }) async {
+    method = 'JSON';
+    this.path = path;
+    version = apiVersion;
+    values = body.map((key, value) => MapEntry(key, '$value'));
+    return result;
+  }
+
+  @override
   Future<Result<Object?>> postMultipart(
     String path, {
     String? apiVersion,

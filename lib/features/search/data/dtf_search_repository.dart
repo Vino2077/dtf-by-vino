@@ -69,25 +69,17 @@ class DtfSearchRepository implements SearchRepository {
     int subsiteId, {
     required bool value,
   }) async {
-    final attempts = [
-      () => _api.postMultipart(
-        'subscribe/toggle',
-        fields: {'id': '$subsiteId', 'type': '3', 'action': value ? '1' : '0'},
-      ),
-      () => _api.postForm(
-        'subsite/$subsiteId/${value ? 'subscribe' : 'unsubscribe'}',
-      ),
-      () => _api.postForm(
-        'subscription/${value ? 'subscribe' : 'unsubscribe'}',
-        body: {'subsiteId': '$subsiteId'},
-      ),
-    ];
-    Failure<Object?>? lastFailure;
-    for (final attempt in attempts) {
-      final result = await attempt();
-      if (result is Success<Object?>) return const Success(null);
-      lastFailure = result as Failure<Object?>;
-    }
-    return Failure(lastFailure?.failure ?? const UnknownFailure());
+    final result = await _api.postJson(
+      'subsite/subscription',
+      body: {
+        'id': subsiteId,
+        'action': value ? 'subscribe' : 'unsubscribe',
+        'isSubscribedToNotifications': false,
+      },
+    );
+    return switch (result) {
+      Success<Object?>() => const Success(null),
+      Failure<Object?>(:final failure) => Failure(failure),
+    };
   }
 }

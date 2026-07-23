@@ -26,6 +26,13 @@ class _FakeApiClient implements ApiClient {
   }) => throw UnimplementedError();
 
   @override
+  Future<Result<Object?>> postJson(
+    String path, {
+    String? apiVersion,
+    Map<String, Object?> body = const {},
+  }) => throw UnimplementedError();
+
+  @override
   Future<Result<Object?>> postMultipart(
     String path, {
     String? apiVersion,

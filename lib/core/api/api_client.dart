@@ -25,6 +25,12 @@ abstract interface class ApiClient {
     Map<String, String> body = const {},
   });
 
+  Future<Result<Object?>> postJson(
+    String path, {
+    String? apiVersion,
+    Map<String, Object?> body = const {},
+  });
+
   Future<Result<Object?>> postMultipart(
     String path, {
     String? apiVersion,

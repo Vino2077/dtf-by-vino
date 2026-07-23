@@ -52,6 +52,16 @@ class FakeApi implements ApiClient {
   }
 
   @override
+  Future<Result<Object?>> postJson(
+    String path, {
+    String? apiVersion,
+    Map<String, Object?> body = const {},
+  }) async {
+    paths.add(path);
+    return response(path);
+  }
+
+  @override
   Future<Result<Object?>> postMultipart(
     String path, {
     String? apiVersion,

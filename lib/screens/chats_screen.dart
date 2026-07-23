@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../features/chat/data/chat_repository.dart';
 import '../features/chat/presentation/chat_controller.dart';
+import '../models/channel.dart';
 import '../services/settings_service.dart';
 import '../theme.dart';
 import '../widgets/avatar.dart';
@@ -17,8 +18,7 @@ class ChatsScreen extends StatefulWidget {
 
 class _ChatsScreenState extends State<ChatsScreen> {
   late final ChatController _controller;
-  List<Map<String, dynamic>> get _channels =>
-      _controller.channels.map((channel) => channel.rawJson).toList();
+  List<Channel> get _channels => _controller.channels;
   bool _loading = true;
   bool get _loadingMore => _controller.isLoadingMore;
   final _scroll = ScrollController();
@@ -109,7 +109,7 @@ class _ChatsScreenState extends State<ChatsScreen> {
     );
   }
 
-  Future<void> _openChat(dynamic channel) async {
+  Future<void> _openChat(Channel channel) async {
     await Navigator.push(
       context,
       MaterialPageRoute(builder: (_) => ChatScreen(channel: channel)),
@@ -119,12 +119,14 @@ class _ChatsScreenState extends State<ChatsScreen> {
 }
 
 class _ChannelTile extends StatelessWidget {
-  final dynamic channel;
+  final Channel channel;
   final VoidCallback onTap;
   const _ChannelTile({required this.channel, required this.onTap});
 
+  Map<String, dynamic> get data => channel.rawJson;
+
   String _preview(BuildContext context) {
-    final last = channel['lastMessage'];
+    final last = data['lastMessage'];
     if (last is! Map) return '';
     final myId = context.read<SettingsService>().myUserId?.toString();
     final authorId = last['author']?['id']?.toString();
@@ -135,7 +137,7 @@ class _ChannelTile extends StatelessWidget {
   }
 
   String _time() {
-    final last = channel['lastMessage'];
+    final last = data['lastMessage'];
     final ts = last is Map ? last['dtCreated'] : null;
     if (ts is! num) return '';
     final d = DateTime.fromMillisecondsSinceEpoch((ts * 1000).toInt());
@@ -154,9 +156,9 @@ class _ChannelTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final accent = Theme.of(context).colorScheme.primary;
-    final unread = (channel['unreadCount'] ?? 0) as int;
-    final pending = channel['pendingAcceptance'] == true;
-    final pic = channel['pictureData'];
+    final unread = (data['unreadCount'] ?? 0) as int;
+    final pending = data['pendingAcceptance'] == true;
+    final pic = data['pictureData'];
     final animated = pic?['data']?['type'] == 'gif';
 
     return InkWell(
@@ -175,7 +177,7 @@ class _ChannelTile extends StatelessWidget {
                     children: [
                       Expanded(
                         child: Text(
-                          channel['title'] ?? '',
+                          data['title'] ?? '',
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(

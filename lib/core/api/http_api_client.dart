@@ -43,6 +43,19 @@ class HttpApiClient implements ApiClient, UploadApiClient {
   );
 
   @override
+  Future<Result<Object?>> postJson(
+    String path, {
+    String? apiVersion,
+    Map<String, Object?> body = const {},
+  }) => _execute(
+    () => _client.post(
+      ApiConfig.url(path, version: apiVersion ?? ApiConfig.vDefault),
+      headers: {..._headers(), 'Content-Type': 'application/json'},
+      body: jsonEncode(body),
+    ),
+  );
+
+  @override
   Future<Result<Object?>> postMultipart(
     String path, {
     String? apiVersion,

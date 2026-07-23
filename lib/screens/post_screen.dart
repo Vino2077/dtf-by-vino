@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:provider/provider.dart';
 import 'package:image_picker/image_picker.dart';
 import '../features/comments/data/comments_repository.dart';
@@ -12,9 +11,9 @@ import '../models/post.dart';
 import '../services/settings_service.dart';
 import '../services/restorer_service.dart';
 import '../theme.dart';
-import '../util/osnova_image.dart';
 import '../widgets/avatar.dart';
 import '../widgets/blocks/block_view.dart';
+import '../widgets/comment_composer.dart';
 import '../widgets/comment_thread.dart';
 import '../widgets/profile_navigation.dart';
 import '../widgets/reactions.dart';
@@ -1040,220 +1039,21 @@ class _PostScreenState extends State<PostScreen> {
     );
   }
 
-  Widget _buildComposer() {
-    final accent = Theme.of(context).colorScheme.primary;
-    return Container(
-      decoration: BoxDecoration(
-        color: AppColors.bgCard,
-        border: Border(
-          top: BorderSide(
-            color: Colors.white.withValues(alpha: 0.07),
-            width: 0.5,
-          ),
-        ),
-      ),
-      child: SafeArea(
-        top: false,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (_replyToName != null)
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.fromLTRB(16, 6, 8, 6),
-                color: AppColors.bgDeep,
-                child: Row(
-                  children: [
-                    Icon(Icons.reply, size: 14, color: accent),
-                    const SizedBox(width: 6),
-                    Expanded(
-                      child: Text(
-                        'Ответ для $_replyToName',
-                        style: TextStyle(color: accent, fontSize: 12),
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                    GestureDetector(
-                      onTap: _cancelReply,
-                      child: Icon(
-                        Icons.close,
-                        size: 16,
-                        color: AppColors.textMuted,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            // Attachment previews
-            if (_attachments.isNotEmpty || _attaching)
-              SizedBox(
-                height: 72,
-                child: ListView(
-                  scrollDirection: Axis.horizontal,
-                  padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
-                  children: [
-                    ..._attachments.asMap().entries.map((e) {
-                      final uuid = e.value['data']?['uuid'];
-                      return Padding(
-                        padding: const EdgeInsets.only(right: 8),
-                        child: Stack(
-                          children: [
-                            ClipRRect(
-                              borderRadius: BorderRadius.circular(8),
-                              child: CachedNetworkImage(
-                                imageUrl: OsnovaImage(uuid).preview(120),
-                                width: 64,
-                                height: 64,
-                                fit: BoxFit.cover,
-                                placeholder: (_, _) => Container(
-                                  width: 64,
-                                  height: 64,
-                                  color: AppColors.bgElevated,
-                                ),
-                                errorWidget: (_, _, _) => Container(
-                                  width: 64,
-                                  height: 64,
-                                  color: AppColors.bgElevated,
-                                  child: Icon(
-                                    Icons.image,
-                                    color: Colors.grey,
-                                    size: 20,
-                                  ),
-                                ),
-                              ),
-                            ),
-                            Positioned(
-                              right: 2,
-                              top: 2,
-                              child: GestureDetector(
-                                onTap: () => setState(
-                                  () => _attachments.removeAt(e.key),
-                                ),
-                                child: Container(
-                                  decoration: const BoxDecoration(
-                                    color: Colors.black54,
-                                    shape: BoxShape.circle,
-                                  ),
-                                  child: Icon(
-                                    Icons.close,
-                                    color: Colors.white,
-                                    size: 16,
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      );
-                    }),
-                    if (_attaching)
-                      Container(
-                        width: 64,
-                        height: 64,
-                        decoration: BoxDecoration(
-                          color: AppColors.bgElevated,
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: const Center(
-                          child: SizedBox(
-                            width: 22,
-                            height: 22,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          ),
-                        ),
-                      ),
-                  ],
-                ),
-              ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(8, 8, 8, 8),
-              child: Row(
-                children: [
-                  GestureDetector(
-                    onTap: _attachGif,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 6,
-                      ),
-                      decoration: BoxDecoration(
-                        color: AppColors.bgElevated,
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Text(
-                        'GIF',
-                        style: TextStyle(
-                          color: accent,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 13,
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 6),
-                  IconButton(
-                    padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints(
-                      minWidth: 36,
-                      minHeight: 36,
-                    ),
-                    icon: Icon(
-                      Icons.image_outlined,
-                      color: AppColors.textMuted,
-                    ),
-                    onPressed: _attachFromGallery,
-                  ),
-                  const SizedBox(width: 4),
-                  Expanded(
-                    child: TextField(
-                      controller: _commentController,
-                      focusNode: _commentFocus,
-                      style: TextStyle(
-                        color: AppColors.textPrimary,
-                        fontSize: 14,
-                      ),
-                      minLines: 1,
-                      maxLines: 5,
-                      textCapitalization: TextCapitalization.sentences,
-                      decoration: InputDecoration(
-                        hintText: 'Комментарий...',
-                        hintStyle: const TextStyle(color: AppColors.textMuted),
-                        filled: true,
-                        fillColor: AppColors.bgElevated,
-                        isDense: true,
-                        contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 14,
-                          vertical: 10,
-                        ),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(20),
-                          borderSide: BorderSide.none,
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 4),
-                  _sending
-                      ? const Padding(
-                          padding: EdgeInsets.all(10),
-                          child: SizedBox(
-                            width: 22,
-                            height: 22,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          ),
-                        )
-                      : IconButton(
-                          icon: Icon(Icons.send, color: accent),
-                          onPressed: _sendComment,
-                        ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
+  Widget _buildComposer() => CommentComposer(
+    controller: _commentController,
+    focusNode: _commentFocus,
+    attachments: _attachments,
+    isAttaching: _attaching,
+    isSending: _sending,
+    replyToName: _replyToName,
+    onCancelReply: _cancelReply,
+    onAttachGif: _attachGif,
+    onAttachGallery: _attachFromGallery,
+    onRemoveAttachment: (index) {
+      setState(() => _attachments.removeAt(index));
+    },
+    onSend: _sendComment,
+  );
 
   String _formatDate(DateTime? date) {
     if (date == null) return '';

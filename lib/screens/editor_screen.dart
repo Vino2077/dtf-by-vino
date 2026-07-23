@@ -5,6 +5,7 @@ import '../features/editor/data/editor_repository.dart';
 import '../features/editor/presentation/editor_controller.dart';
 import '../services/settings_service.dart';
 import '../theme.dart';
+import '../widgets/editor_toolbar.dart';
 
 // ---------------------------------------------------------------------------
 // Block model
@@ -1079,82 +1080,19 @@ class _EditorScreenState extends State<EditorScreen> {
   // Toolbar
   // ---------------------------------------------------------------------------
 
-  Widget _buildToolbar(Color accent) {
-    return Container(
-      height: 48,
-      decoration: BoxDecoration(
-        color: AppColors.bgCard,
-        border: Border(top: BorderSide(color: AppColors.bgElevated)),
-      ),
-      child: Row(
-        children: [
-          _toolTxt(
-            'H2',
-            onTap: () => _convertBlock(_BType.header, headerStyle: 'h2'),
-          ),
-          _toolTxt(
-            'H3',
-            onTap: () => _convertBlock(_BType.header, headerStyle: 'h3'),
-          ),
-          _toolTxt('T', onTap: () => _convertBlock(_BType.text)),
-          _toolIco(
-            Icons.format_quote,
-            onTap: () => _convertBlock(_BType.quote),
-          ),
-          _toolIco(
-            Icons.format_list_bulleted,
-            onTap: () => _convertBlock(_BType.list),
-          ),
-          _toolTxt(
-            '* * *',
-            small: true,
-            onTap: () {
-              _insertBlock(
-                _BType.delimiter,
-                afterIndex: _focused >= 0 ? _focused : null,
-              );
-            },
-          ),
-          _toolIco(Icons.mic_none, onTap: _onToolbarAudio),
-          _toolIco(Icons.image_outlined, onTap: _onToolbarMedia),
-        ],
-      ),
-    );
-  }
-
-  Widget _toolTxt(
-    String label, {
-    required VoidCallback onTap,
-    bool small = false,
-  }) {
-    return Expanded(
-      child: InkWell(
-        onTap: onTap,
-        child: Center(
-          child: Text(
-            label,
-            style: TextStyle(
-              color: AppColors.textSecondary,
-              fontSize: small ? 11 : 13,
-              fontWeight: FontWeight.w700,
-              letterSpacing: small ? 2 : 0,
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _toolIco(IconData icon, {required VoidCallback onTap}) {
-    return Expanded(
-      child: InkWell(
-        onTap: onTap,
-        child: Center(
-          child: Icon(icon, size: 20, color: AppColors.textSecondary),
-        ),
-      ),
-    );
-  }
+  Widget _buildToolbar(Color accent) => EditorToolbar(
+    onH2: () => _convertBlock(_BType.header, headerStyle: 'h2'),
+    onH3: () => _convertBlock(_BType.header, headerStyle: 'h3'),
+    onText: () => _convertBlock(_BType.text),
+    onQuote: () => _convertBlock(_BType.quote),
+    onList: () => _convertBlock(_BType.list),
+    onDelimiter: () => _insertBlock(
+      _BType.delimiter,
+      afterIndex: _focused >= 0 ? _focused : null,
+    ),
+    onAudio: _onToolbarAudio,
+    onMedia: _onToolbarMedia,
+  );
 
   // ---------------------------------------------------------------------------
   // Helper widgets
