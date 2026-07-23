@@ -2,7 +2,7 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
-import '../api/dtf_api.dart';
+import '../features/comments/data/comments_repository.dart';
 import '../services/settings_service.dart';
 import '../services/reactions_registry.dart';
 import '../theme.dart';
@@ -21,14 +21,24 @@ class ReactionIcon extends StatelessWidget {
   final int id;
   final double size;
   final bool animated;
-  const ReactionIcon({super.key, required this.id, this.size = 18, this.animated = true});
+  const ReactionIcon({
+    super.key,
+    required this.id,
+    this.size = 18,
+    this.animated = true,
+  });
 
   @override
   Widget build(BuildContext context) {
     if (animated) {
       final asset = ReactionsRegistry.localAnimatedAsset(id);
       if (asset != null) {
-        return Image.asset(asset, width: size, height: size, fit: BoxFit.contain);
+        return Image.asset(
+          asset,
+          width: size,
+          height: size,
+          fit: BoxFit.contain,
+        );
       }
     }
     final px = (size * 2).round();
@@ -37,8 +47,13 @@ class ReactionIcon extends StatelessWidget {
         : ReactionsRegistry.imageUrl(id, size: px);
     if (url.isEmpty) {
       return SizedBox(
-        width: size, height: size,
-        child: const Icon(Icons.emoji_emotions_outlined, size: 14, color: Colors.grey),
+        width: size,
+        height: size,
+        child: Icon(
+          Icons.emoji_emotions_outlined,
+          size: 14,
+          color: Colors.grey,
+        ),
       );
     }
     return CachedNetworkImage(
@@ -48,8 +63,13 @@ class ReactionIcon extends StatelessWidget {
       fit: BoxFit.contain,
       placeholder: (_, _) => SizedBox(width: size, height: size),
       errorWidget: (_, _, _) => SizedBox(
-        width: size, height: size,
-        child: const Icon(Icons.emoji_emotions_outlined, size: 14, color: Colors.grey),
+        width: size,
+        height: size,
+        child: Icon(
+          Icons.emoji_emotions_outlined,
+          size: 14,
+          color: Colors.grey,
+        ),
       ),
     );
   }
@@ -87,16 +107,25 @@ int applyReactionToggle(Map reactions, int tappedId) {
 }
 
 /// Shows the easter-egg "за шо..." toast — only for negative reactions.
-void showReactionToast(BuildContext context, int reactionId, {required bool added}) {
+void showReactionToast(
+  BuildContext context,
+  int reactionId, {
+  required bool added,
+}) {
   if (!added) return;
   if (!negativeReactionIds.contains(reactionId)) return;
-  ScaffoldMessenger.maybeOf(context)?.showSnackBar(const SnackBar(
-    content: Text('за шо...', textAlign: TextAlign.center,
-        style: TextStyle(fontSize: 15)),
-    duration: Duration(milliseconds: 1400),
-    behavior: SnackBarBehavior.floating,
-    margin: EdgeInsets.fromLTRB(80, 0, 80, 16),
-  ));
+  ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+    const SnackBar(
+      content: Text(
+        'за шо...',
+        textAlign: TextAlign.center,
+        style: TextStyle(fontSize: 15),
+      ),
+      duration: Duration(milliseconds: 1400),
+      behavior: SnackBarBehavior.floating,
+      margin: EdgeInsets.fromLTRB(80, 0, 80, 16),
+    ),
+  );
 }
 
 /// Shows the full reaction palette (all reactions, scrollable — they don't
@@ -105,7 +134,10 @@ void showReactionToast(BuildContext context, int reactionId, {required bool adde
 /// Order adapts to the user: reactions they use most come first. Ties (and the
 /// initial all-zero state) fall back to the curated [pickerOrder], then by id —
 /// so before any usage data the layout matches the classic order.
-void showReactionPicker(BuildContext context, void Function(int reactionId) onPick) {
+void showReactionPicker(
+  BuildContext context,
+  void Function(int reactionId) onPick,
+) {
   final usage = context.read<SettingsService>().reactionUsage;
   final pickerOrder = ReactionsRegistry.pickerOrder;
   final ids = [...ReactionsRegistry.allIds]
@@ -137,23 +169,26 @@ void showReactionPicker(BuildContext context, void Function(int reactionId) onPi
               width: 40,
               height: 4,
               decoration: BoxDecoration(
-                  color: AppColors.textMuted,
-                  borderRadius: BorderRadius.circular(2)),
+                color: AppColors.textMuted,
+                borderRadius: BorderRadius.circular(2),
+              ),
             ),
             Padding(
               padding: EdgeInsets.symmetric(vertical: 12),
-              child: Text('Выбери реакцию',
-                  style: TextStyle(
-                      color: AppColors.textPrimary,
-                      fontSize: 15,
-                      fontWeight: FontWeight.bold)),
+              child: Text(
+                'Выбери реакцию',
+                style: TextStyle(
+                  color: AppColors.textPrimary,
+                  fontSize: 15,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
             ),
             Expanded(
               child: GridView.builder(
                 controller: scrollController,
                 padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-                gridDelegate:
-                    const SliverGridDelegateWithFixedCrossAxisCount(
+                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
                   crossAxisCount: 5,
                   mainAxisSpacing: 10,
                   crossAxisSpacing: 10,
@@ -192,8 +227,7 @@ void showReactionPicker(BuildContext context, void Function(int reactionId) onPi
 class AddReactionButton extends StatelessWidget {
   final void Function(int reactionId) onPick;
   final double size;
-  const AddReactionButton(
-      {super.key, required this.onPick, this.size = 32});
+  const AddReactionButton({super.key, required this.onPick, this.size = 32});
 
   @override
   Widget build(BuildContext context) {
@@ -208,8 +242,7 @@ class AddReactionButton extends StatelessWidget {
           shape: BoxShape.circle,
         ),
         alignment: Alignment.center,
-        child:
-            Icon(Icons.add, color: AppColors.textMuted, size: size * 0.55),
+        child: Icon(Icons.add, color: AppColors.textMuted, size: size * 0.55),
       ),
     );
   }
@@ -225,8 +258,8 @@ void showReactionUsers({
   showModalBottomSheet(
     context: context,
     isScrollControlled: true,
-    builder: (_) => _ReactionUsersSheet(
-        id: id, isComment: isComment, settings: settings),
+    builder: (_) =>
+        _ReactionUsersSheet(id: id, isComment: isComment, settings: settings),
   );
 }
 
@@ -234,7 +267,11 @@ class _ReactionUsersSheet extends StatefulWidget {
   final int id;
   final bool isComment;
   final SettingsService settings;
-  const _ReactionUsersSheet({required this.id, required this.isComment, required this.settings});
+  const _ReactionUsersSheet({
+    required this.id,
+    required this.isComment,
+    required this.settings,
+  });
 
   @override
   State<_ReactionUsersSheet> createState() => _ReactionUsersSheetState();
@@ -341,7 +378,9 @@ class _BurstPainter extends CustomPainter {
     // Rays extend during the first 45% of animation
     final extendT = Curves.easeOut.transform((progress / 0.45).clamp(0.0, 1.0));
     // Rays fade during the last 60%
-    final fadeT = Curves.easeIn.transform(((progress - 0.40) / 0.60).clamp(0.0, 1.0));
+    final fadeT = Curves.easeIn.transform(
+      ((progress - 0.40) / 0.60).clamp(0.0, 1.0),
+    );
     final opacity = (1.0 - fadeT).clamp(0.0, 1.0);
     if (opacity <= 0) return;
 
@@ -359,10 +398,14 @@ class _BurstPainter extends CustomPainter {
     for (int i = 0; i < 8; i++) {
       final angle = i * (2 * pi / 8);
       canvas.drawLine(
-        Offset(center.dx + cos(angle) * innerRadius,
-               center.dy + sin(angle) * innerRadius),
-        Offset(center.dx + cos(angle) * outerRadius,
-               center.dy + sin(angle) * outerRadius),
+        Offset(
+          center.dx + cos(angle) * innerRadius,
+          center.dy + sin(angle) * innerRadius,
+        ),
+        Offset(
+          center.dx + cos(angle) * outerRadius,
+          center.dy + sin(angle) * outerRadius,
+        ),
         paint,
       );
     }
@@ -381,12 +424,18 @@ class _ReactionUsersSheetState extends State<_ReactionUsersSheet> {
   @override
   void initState() {
     super.initState();
-    DtfApi.getReactionUsers(
+    _load();
+  }
+
+  Future<void> _load() async {
+    final result = await context.read<CommentsRepository>().loadReactionUsers(
       id: widget.id,
       isComment: widget.isComment,
-      settings: widget.settings,
-    ).then((u) {
-      if (mounted) setState(() { _users = u; _loading = false; });
+    );
+    if (!mounted) return;
+    setState(() {
+      _users = result.valueOrNull ?? const [];
+      _loading = false;
     });
   }
 
@@ -411,27 +460,36 @@ class _ReactionUsersSheetState extends State<_ReactionUsersSheet> {
             width: 40,
             height: 4,
             decoration: BoxDecoration(
-                color: AppColors.textMuted,
-                borderRadius: BorderRadius.circular(2)),
+              color: AppColors.textMuted,
+              borderRadius: BorderRadius.circular(2),
+            ),
           ),
           Padding(
             padding: EdgeInsets.symmetric(vertical: 12),
-            child: Text('Реакции',
-                style: TextStyle(
-                    color: AppColors.textPrimary,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 16)),
+            child: Text(
+              'Реакции',
+              style: TextStyle(
+                color: AppColors.textPrimary,
+                fontWeight: FontWeight.bold,
+                fontSize: 16,
+              ),
+            ),
           ),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
             child: TextField(
               onChanged: (v) => setState(() => _query = v),
               style: TextStyle(
-                  color: AppColors.textPrimary, fontSize: 14),
+                color: AppColors.textPrimary,
+                fontSize: 14,
+              ),
               decoration: InputDecoration(
                 hintText: 'Поиск по имени',
-                prefixIcon: Icon(Icons.search,
-                    color: AppColors.textMuted, size: 20),
+                prefixIcon: Icon(
+                  Icons.search,
+                  color: AppColors.textMuted,
+                  size: 20,
+                ),
                 filled: true,
                 fillColor: AppColors.bgElevated,
                 isDense: true,
@@ -445,43 +503,42 @@ class _ReactionUsersSheetState extends State<_ReactionUsersSheet> {
           const SizedBox(height: 8),
           Expanded(
             child: _loading
-                ? const Center(child: CircularProgressIndicator())
+                ? Center(child: CircularProgressIndicator())
                 : filtered.isEmpty
-                    ? Center(
-                        child: Text(
-                          _users.isEmpty
-                              ? 'Список реакций недоступен'
-                              : 'Никого не найдено',
+                ? Center(
+                    child: Text(
+                      _users.isEmpty
+                          ? 'Список реакций недоступен'
+                          : 'Никого не найдено',
+                      style: TextStyle(color: AppColors.textSecondary),
+                    ),
+                  )
+                : ListView.builder(
+                    controller: scrollController,
+                    itemCount: filtered.length,
+                    itemBuilder: (_, i) {
+                      final u = filtered[i];
+                      final subsite = u['subsite'];
+                      final rid = u['reactionId'] as int?;
+                      return ListTile(
+                        leading: Avatar.fromData(subsite?['avatar'], size: 38),
+                        title: Text(
+                          subsite?['name'] ?? 'Аноним',
                           style: TextStyle(
-                              color: AppColors.textSecondary),
+                            color: AppColors.textPrimary,
+                            fontSize: 14,
+                          ),
                         ),
-                      )
-                    : ListView.builder(
-                        controller: scrollController,
-                        itemCount: filtered.length,
-                        itemBuilder: (_, i) {
-                          final u = filtered[i];
-                          final subsite = u['subsite'];
-                          final rid = u['reactionId'] as int?;
-                          return ListTile(
-                            leading: Avatar.fromData(
-                                subsite?['avatar'],
-                                size: 38),
-                            title: Text(
-                                subsite?['name'] ?? 'Аноним',
-                                style: TextStyle(
-                                    color: AppColors.textPrimary,
-                                    fontSize: 14)),
-                            trailing: rid != null
-                                ? ReactionIcon(id: rid, size: 22)
-                                : null,
-                            onTap: () {
-                              Navigator.pop(context);
-                              openUserProfile(context, subsite);
-                            },
-                          );
+                        trailing: rid != null
+                            ? ReactionIcon(id: rid, size: 22)
+                            : null,
+                        onTap: () {
+                          Navigator.pop(context);
+                          openUserProfile(context, subsite);
                         },
-                      ),
+                      );
+                    },
+                  ),
           ),
         ],
       ),

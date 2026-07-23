@@ -32,6 +32,17 @@ class _FakeRepository implements CommentsRepository {
   }) async => loadResult;
 
   @override
+  Future<Result<Comment?>> loadTopComment(int postId) async =>
+      const Success(null);
+
+  @override
+  Future<Result<List<Map<String, dynamic>>>> loadReactionUsers({
+    required int id,
+    required bool isComment,
+    int? reactionId,
+  }) async => const Success([]);
+
+  @override
   Future<Result<List<Comment>>> loadThread(int postId, String threadId) {
     threadCalls++;
     return threadCompleter?.future ?? Future.value(threadResult);

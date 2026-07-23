@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../services/settings_service.dart';
-import '../api/dtf_api.dart';
+import '../features/auth/data/auth_repository.dart';
+import '../features/auth/presentation/login_controller.dart';
+import '../services/auth_service.dart';
 import '../theme.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -12,6 +13,7 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen> {
+  late final LoginController _controller;
   final _emailCtrl = TextEditingController();
   final _passwordCtrl = TextEditingController();
   bool _obscure = true;
@@ -19,7 +21,17 @@ class _LoginScreenState extends State<LoginScreen> {
   String? _error;
 
   @override
+  void initState() {
+    super.initState();
+    _controller = LoginController(
+      context.read<AuthRepository>(),
+      context.read<AuthService>(),
+    );
+  }
+
+  @override
   void dispose() {
+    _controller.dispose();
     _emailCtrl.dispose();
     _passwordCtrl.dispose();
     super.dispose();
@@ -32,35 +44,21 @@ class _LoginScreenState extends State<LoginScreen> {
       setState(() => _error = 'Заполни почту и пароль');
       return;
     }
-    setState(() { _loading = true; _error = null; });
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
 
-    final result = await DtfApi.loginWithPassword(email, password);
+    final success = await _controller.login(email, password);
     if (!mounted) return;
-    if (result['ok'] != true) {
-      setState(() { _loading = false; _error = result['error'] ?? 'Не удалось войти'; });
-      return;
-    }
-
-    final token = result['token'] as String;
-    final valid = await DtfApi.validateToken(token);
-    if (!mounted) return;
-    if (!valid) {
+    if (success) {
+      Navigator.pop(context, true);
+    } else {
       setState(() {
         _loading = false;
-        _error = 'Сервер вернул токен, но он не сработал. Попробуй войти по токену вручную ниже.';
+        _error = _controller.failure?.message ?? 'Не удалось войти';
       });
-      return;
     }
-
-    try {
-      await context.read<SettingsService>().saveToken(token);
-    } on AuthStorageException catch (error) {
-      if (mounted) {
-        setState(() { _loading = false; _error = error.message; });
-      }
-      return;
-    }
-    if (mounted) Navigator.pop(context, true);
   }
 
   void _showManualTokenDialog() {
@@ -73,17 +71,25 @@ class _LoginScreenState extends State<LoginScreen> {
       ),
       builder: (_) => Padding(
         padding: EdgeInsets.only(
-          left: 16, right: 16, top: 16,
+          left: 16,
+          right: 16,
+          top: 16,
           bottom: MediaQuery.of(context).viewInsets.bottom + 16,
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Войти по токену',
-                style: TextStyle(color: AppColors.textPrimary, fontSize: 16, fontWeight: FontWeight.bold)),
+            Text(
+              'Войти по токену',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
             const SizedBox(height: 8),
-            const Text(
+            Text(
               'На сайте dtf.ru: Профиль → Настройки → внизу страницы '
               '«Инструменты для разработчика» — там будет токен для входа.',
               style: TextStyle(color: Colors.grey, fontSize: 13),
@@ -92,7 +98,7 @@ class _LoginScreenState extends State<LoginScreen> {
             TextField(
               controller: ctrl,
               autofocus: true,
-              style: const TextStyle(color: Colors.white, fontSize: 12),
+              style: TextStyle(color: Colors.white, fontSize: 12),
               maxLines: 3,
               decoration: InputDecoration(
                 hintText: 'Вставь токен...',
@@ -111,20 +117,19 @@ class _LoginScreenState extends State<LoginScreen> {
                 final tok = ctrl.text.trim();
                 Navigator.pop(context);
                 if (tok.isEmpty) return;
-                setState(() { _loading = true; _error = null; });
-                final valid = await DtfApi.validateToken(tok);
+                setState(() {
+                  _loading = true;
+                  _error = null;
+                });
+                final valid = await _controller.saveValidatedToken(tok);
                 if (!mounted) return;
                 if (valid) {
-                  try {
-                    await context.read<SettingsService>().saveToken(tok);
-                    if (mounted) Navigator.pop(context, true);
-                  } on AuthStorageException catch (error) {
-                    if (mounted) {
-                      setState(() { _loading = false; _error = error.message; });
-                    }
-                  }
+                  Navigator.pop(context, true);
                 } else {
-                  setState(() { _loading = false; _error = 'Токен не подошёл'; });
+                  setState(() {
+                    _loading = false;
+                    _error = _controller.failure?.message ?? 'Токен не подошёл';
+                  });
                 }
               },
               style: ElevatedButton.styleFrom(
@@ -132,7 +137,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 foregroundColor: Colors.white,
                 minimumSize: const Size(double.infinity, 44),
               ),
-              child: const Text('Войти'),
+              child: Text('Войти'),
             ),
           ],
         ),
@@ -141,16 +146,16 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   InputDecoration _fieldDecoration(String hint) => InputDecoration(
-        hintText: hint,
-        hintStyle: const TextStyle(color: Colors.grey),
-        filled: true,
-        fillColor: AppColors.bgCard,
-        contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(8),
-          borderSide: BorderSide.none,
-        ),
-      );
+    hintText: hint,
+    hintStyle: const TextStyle(color: Colors.grey),
+    filled: true,
+    fillColor: AppColors.bgCard,
+    contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+    border: OutlineInputBorder(
+      borderRadius: BorderRadius.circular(8),
+      borderSide: BorderSide.none,
+    ),
+  );
 
   @override
   Widget build(BuildContext context) {
@@ -171,7 +176,10 @@ class _LoginScreenState extends State<LoginScreen> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               const SizedBox(height: 24),
-              const Text('Почта', style: TextStyle(color: Colors.grey, fontSize: 13)),
+              Text(
+                'Почта',
+                style: TextStyle(color: Colors.grey, fontSize: 13),
+              ),
               const SizedBox(height: 6),
               TextField(
                 controller: _emailCtrl,
@@ -181,7 +189,10 @@ class _LoginScreenState extends State<LoginScreen> {
                 decoration: _fieldDecoration('email@example.com'),
               ),
               const SizedBox(height: 16),
-              const Text('Пароль', style: TextStyle(color: Colors.grey, fontSize: 13)),
+              Text(
+                'Пароль',
+                style: TextStyle(color: Colors.grey, fontSize: 13),
+              ),
               const SizedBox(height: 6),
               TextField(
                 controller: _passwordCtrl,
@@ -191,14 +202,20 @@ class _LoginScreenState extends State<LoginScreen> {
                 onSubmitted: (_) => _submit(),
                 decoration: _fieldDecoration('Пароль').copyWith(
                   suffixIcon: IconButton(
-                    icon: Icon(_obscure ? Icons.visibility_off : Icons.visibility, color: Colors.grey),
+                    icon: Icon(
+                      _obscure ? Icons.visibility_off : Icons.visibility,
+                      color: Colors.grey,
+                    ),
                     onPressed: () => setState(() => _obscure = !_obscure),
                   ),
                 ),
               ),
               if (_error != null) ...[
                 const SizedBox(height: 12),
-                Text(_error!, style: const TextStyle(color: Colors.redAccent, fontSize: 13)),
+                Text(
+                  _error!,
+                  style: TextStyle(color: Colors.redAccent, fontSize: 13),
+                ),
               ],
               const SizedBox(height: 20),
               ElevatedButton(
@@ -210,15 +227,25 @@ class _LoginScreenState extends State<LoginScreen> {
                 ),
                 child: _loading
                     ? const SizedBox(
-                        width: 22, height: 22,
-                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                    : const Text('Войти'),
+                        width: 22,
+                        height: 22,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.white,
+                        ),
+                      )
+                    : Text('Войти'),
               ),
               const SizedBox(height: 16),
               Center(
                 child: TextButton(
                   onPressed: _loading ? null : _showManualTokenDialog,
-                  child: Text('Войти по токену', style: TextStyle(color: Theme.of(context).colorScheme.primary)),
+                  child: Text(
+                    'Войти по токену',
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.primary,
+                    ),
+                  ),
                 ),
               ),
             ],

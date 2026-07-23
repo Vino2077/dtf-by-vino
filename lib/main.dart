@@ -6,10 +6,16 @@ import 'package:http/http.dart' as http;
 
 import 'core/api/api_client.dart';
 import 'core/api/http_api_client.dart';
+import 'features/auth/data/auth_repository.dart';
+import 'features/auth/data/dtf_auth_repository.dart';
 import 'features/bookmarks/data/bookmarks_repository.dart';
 import 'features/bookmarks/data/dtf_bookmarks_repository.dart';
+import 'features/chat/data/chat_repository.dart';
+import 'features/chat/data/dtf_chat_repository.dart';
 import 'features/comments/data/comments_repository.dart';
 import 'features/comments/data/dtf_comments_repository.dart';
+import 'features/editor/data/dtf_editor_repository.dart';
+import 'features/editor/data/editor_repository.dart';
 import 'features/feed/data/dtf_feed_repository.dart';
 import 'features/feed/data/feed_repository.dart';
 import 'features/notifications/data/dtf_notifications_repository.dart';
@@ -67,6 +73,16 @@ void main() async {
           ),
           dispose: (_, client) => client.close(),
         ),
+        Provider<UploadApiClient>(
+          create: (context) => context.read<ApiClient>() as UploadApiClient,
+        ),
+        Provider<AuthRepository>(create: (_) => const DtfAuthRepository()),
+        Provider<EditorRepository>(
+          create: (context) => DtfEditorRepository(
+            context.read<ApiClient>(),
+            context.read<UploadApiClient>(),
+          ),
+        ),
         Provider<FeedRepository>(
           create: (context) => DtfFeedRepository(
             context.read<ApiClient>(),
@@ -82,6 +98,9 @@ void main() async {
         Provider<BookmarksRepository>(
           create: (context) =>
               DtfBookmarksRepository(context.read<ApiClient>()),
+        ),
+        Provider<ChatRepository>(
+          create: (context) => DtfChatRepository(context.read<ApiClient>()),
         ),
         Provider<SearchRepository>(
           create: (context) => DtfSearchRepository(context.read<ApiClient>()),

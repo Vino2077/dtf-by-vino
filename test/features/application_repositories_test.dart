@@ -1,10 +1,32 @@
 import 'package:dtf_app/core/api/api_client.dart';
 import 'package:dtf_app/core/api/result.dart';
 import 'package:dtf_app/features/bookmarks/data/dtf_bookmarks_repository.dart';
+import 'package:dtf_app/features/chat/data/dtf_chat_repository.dart';
+import 'package:dtf_app/features/editor/data/dtf_editor_repository.dart';
 import 'package:dtf_app/features/notifications/data/dtf_notifications_repository.dart';
 import 'package:dtf_app/features/profile/data/dtf_profile_repository.dart';
 import 'package:dtf_app/features/search/data/dtf_search_repository.dart';
 import 'package:flutter_test/flutter_test.dart';
+
+class FakeUpload implements UploadApiClient {
+  Result<Object?> result = const Success<Object?>(null);
+
+  @override
+  Future<Result<Object?>> postJsonMultipart(
+    String path, {
+    required String field,
+    required String json,
+    String? apiVersion,
+  }) async => result;
+
+  @override
+  Future<Result<Object?>> uploadFile(
+    String path, {
+    required String field,
+    required String filePath,
+    String? apiVersion,
+  }) async => result;
+}
 
 class FakeApi implements ApiClient {
   final Map<String, Result<Object?>> responses = {};
@@ -92,6 +114,41 @@ void main() {
         (await repository.load('comments')).valueOrNull?.comments.single.id,
         2,
       );
+    },
+  );
+
+  test('chat repository parses channels and messenger paths', () async {
+    final api = FakeApi()
+      ..responses['m/channels?page=1'] = const Success({
+        'channels': [
+          {'id': 4},
+        ],
+      });
+    final repository = DtfChatRepository(api);
+
+    expect((await repository.loadChannels()).valueOrNull?.single.id, 4);
+    expect(api.paths.single, 'm/channels?page=1');
+  });
+
+  test(
+    'editor repository parses uploaded media and created draft id',
+    () async {
+      final api = FakeApi();
+      final uploads = FakeUpload()
+        ..result = const Success({
+          'entry': {'id': 77},
+        });
+      final repository = DtfEditorRepository(api, uploads);
+
+      final id = await repository.save(
+        title: 'Post',
+        blocks: const [],
+        subsiteId: 1,
+        publish: false,
+        isNsfw: false,
+      );
+
+      expect(id.valueOrNull, 77);
     },
   );
 

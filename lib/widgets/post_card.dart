@@ -2,9 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
-import '../api/dtf_api.dart';
 import '../core/api/result.dart';
+import '../features/comments/data/comments_repository.dart';
 import '../features/posts/data/post_repository.dart';
+import '../models/comment.dart';
 import '../models/block.dart';
 import '../models/post.dart';
 import '../models/reaction.dart';
@@ -22,7 +23,12 @@ class PostCard extends StatefulWidget {
   final VoidCallback? onTap;
   final VoidCallback? onTapComments;
 
-  const PostCard({super.key, required this.post, this.onTap, this.onTapComments});
+  const PostCard({
+    super.key,
+    required this.post,
+    this.onTap,
+    this.onTapComments,
+  });
 
   @override
   State<PostCard> createState() => _PostCardState();
@@ -37,8 +43,8 @@ class _PostCardState extends State<PostCard> {
 
   // Popular comment shown under posts with 30+ reactions (like the official app).
   static const _popularCommentThreshold = 30;
-  static final _topCommentCache = <int, dynamic>{};
-  dynamic _topComment;
+  static final _topCommentCache = <int, Comment?>{};
+  Comment? _topComment;
   bool _topCommentRequested = false;
 
   @override
@@ -86,8 +92,10 @@ class _PostCardState extends State<PostCard> {
       return;
     }
     _topCommentRequested = true;
-    final settings = context.read<SettingsService>();
-    final comment = await DtfApi.getTopComment(post.id, settings);
+    final result = await context.read<CommentsRepository>().loadTopComment(
+      post.id,
+    );
+    final comment = result.valueOrNull;
     if (!mounted || comment == null) return;
     _topCommentCache[post.id] = comment;
     setState(() => _topComment = comment);
@@ -96,8 +104,9 @@ class _PostCardState extends State<PostCard> {
   Future<void> _toggleBookmark() async {
     final settings = context.read<SettingsService>();
     if (!settings.isLoggedIn) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('Войди в аккаунт')));
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Войди в аккаунт')));
       return;
     }
     final postId = widget.post.id;
@@ -116,8 +125,9 @@ class _PostCardState extends State<PostCard> {
   Future<void> _react(int reactionId) async {
     final settings = context.read<SettingsService>();
     if (!settings.isLoggedIn) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('Войди в аккаунт')));
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Войди в аккаунт')));
       return;
     }
     final postId = widget.post.id;
@@ -129,14 +139,16 @@ class _PostCardState extends State<PostCard> {
     if (added) settings.recordReactionUse(reactionId);
     showReactionToast(context, reactionId, added: added);
 
-    final result =
-        await context.read<PostRepository>().setReaction(postId, reactionId);
+    final result = await context.read<PostRepository>().setReaction(
+      postId,
+      reactionId,
+    );
     if (!mounted) return;
     if (result case Failure<void>(:final failure)) {
       setState(() => _reactions = snapshot);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Реакция: ${failure.message}')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Реакция: ${failure.message}')));
     }
   }
 
@@ -179,13 +191,16 @@ class _PostCardState extends State<PostCard> {
     final authorId = author?.id;
 
     final isViewed = context.select<SettingsService, bool>(
-        (settings) => settings.viewedPostIds.contains(postId));
+      (settings) => settings.viewedPostIds.contains(postId),
+    );
     final userNote = context.select<SettingsService, String?>(
-        (s) => authorId != null ? s.userNotes[authorId] : null);
+      (s) => authorId != null ? s.userNotes[authorId] : null,
+    );
 
     final myReaction = _reactions.selectedId;
-    final reactions = _reactions.counters.where((item) => item.count > 0).toList()
-      ..sort((a, b) => b.count.compareTo(a.count));
+    final reactions =
+        _reactions.counters.where((item) => item.count > 0).toList()
+          ..sort((a, b) => b.count.compareTo(a.count));
 
     final previewText = _cachedPreviewText;
     final previewMedia = _cachedPreviewMedia;
@@ -212,56 +227,75 @@ class _PostCardState extends State<PostCard> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Row(children: [
-                          Flexible(
-                            child: GestureDetector(
-                              onTap: () => openUserProfile(context, author?.rawJson),
-                              child: Text(
-                                author?.name ?? '',
-                                style: TextStyle(
-                                  color: isViewed
-                                      ? AppColors.textMuted
-                                      : AppColors.textPrimary,
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 14,
+                        Row(
+                          children: [
+                            Flexible(
+                              child: GestureDetector(
+                                onTap: () =>
+                                    openUserProfile(context, author?.rawJson),
+                                child: Text(
+                                  author?.name ?? '',
+                                  style: TextStyle(
+                                    color: isViewed
+                                        ? AppColors.textMuted
+                                        : AppColors.textPrimary,
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 14,
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
                                 ),
-                                overflow: TextOverflow.ellipsis,
                               ),
                             ),
-                          ),
-                          AuthorBadge(author: author?.rawJson, size: 13),
-                          if (userNote != null) ...[
-                            const SizedBox(width: 6),
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 6, vertical: 2),
-                              decoration: BoxDecoration(
-                                color: accent.withValues(alpha: 0.2),
-                                borderRadius: BorderRadius.circular(4),
+                            AuthorBadge(author: author?.rawJson, size: 13),
+                            if (userNote != null) ...[
+                              const SizedBox(width: 6),
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 6,
+                                  vertical: 2,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: accent.withValues(alpha: 0.2),
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                                child: Text(
+                                  userNote,
+                                  style: TextStyle(color: accent, fontSize: 11),
+                                ),
                               ),
-                              child: Text(userNote,
-                                  style: TextStyle(
-                                      color: accent, fontSize: 11)),
+                            ],
+                          ],
+                        ),
+                        Row(
+                          children: [
+                            Text(
+                              subsite?.name ?? '',
+                              style: TextStyle(
+                                color: AppColors.textMuted,
+                                fontSize: 12,
+                              ),
+                            ),
+                            Text(
+                              '  ·  ',
+                              style: TextStyle(
+                                color: AppColors.textMuted,
+                                fontSize: 12,
+                              ),
+                            ),
+                            Text(
+                              _timeAgo(post.date),
+                              style: TextStyle(
+                                color: AppColors.textMuted,
+                                fontSize: 12,
+                              ),
                             ),
                           ],
-                        ]),
-                        Row(children: [
-                          Text(subsite?.name ?? '',
-                              style: TextStyle(
-                                  color: AppColors.textMuted, fontSize: 12)),
-                          Text('  ·  ',
-                              style: TextStyle(
-                                  color: AppColors.textMuted, fontSize: 12)),
-                          Text(_timeAgo(post.date),
-                              style: TextStyle(
-                                  color: AppColors.textMuted, fontSize: 12)),
-                        ]),
+                        ),
                       ],
                     ),
                   ),
                   GestureDetector(
-                    onTap: () =>
-                        setState(() => _collapsed = !_collapsed),
+                    onTap: () => setState(() => _collapsed = !_collapsed),
                     child: Icon(
                       _collapsed
                           ? Icons.keyboard_arrow_down
@@ -273,8 +307,11 @@ class _PostCardState extends State<PostCard> {
                   const SizedBox(width: 4),
                   GestureDetector(
                     onTap: () => _showPostMenu(context),
-                    child: Icon(Icons.more_vert,
-                        color: AppColors.textMuted, size: 20),
+                    child: Icon(
+                      Icons.more_vert,
+                      color: AppColors.textMuted,
+                      size: 20,
+                    ),
                   ),
                 ],
               ),
@@ -298,12 +335,14 @@ class _PostCardState extends State<PostCard> {
                         children: [
                           TextSpan(text: post.title),
                           if (post.isEditorial) ...[
-                            const WidgetSpan(
-                                child: SizedBox(width: 5)),
+                            const WidgetSpan(child: SizedBox(width: 5)),
                             WidgetSpan(
                               alignment: PlaceholderAlignment.middle,
-                              child: Icon(Icons.verified,
-                                  size: 17, color: accent),
+                              child: Icon(
+                                Icons.verified,
+                                size: 17,
+                                color: accent,
+                              ),
                             ),
                           ],
                         ],
@@ -316,9 +355,10 @@ class _PostCardState extends State<PostCard> {
                         maxLines: 3,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
-                            color: AppColors.textSecondary,
-                            fontSize: 14,
-                            height: 1.4),
+                          color: AppColors.textSecondary,
+                          fontSize: 14,
+                          height: 1.4,
+                        ),
                       ),
                     ],
                     if (previewMedia != null) ...[
@@ -335,41 +375,44 @@ class _PostCardState extends State<PostCard> {
                           return BurstTap(
                             onTap: () => _react(r.id),
                             onLongPress: () => showReactionUsers(
-                                context: context,
-                                id: postId,
-                                isComment: false,
-                                settings: context.read<SettingsService>()),
+                              context: context,
+                              id: postId,
+                              isComment: false,
+                              settings: context.read<SettingsService>(),
+                            ),
                             burstColor: accent,
                             scale: 0.90,
                             child: AnimatedContainer(
-                              duration:
-                                  const Duration(milliseconds: 200),
+                              duration: const Duration(milliseconds: 200),
                               curve: Curves.easeOut,
                               padding: const EdgeInsets.symmetric(
-                                  horizontal: 8, vertical: 4),
+                                horizontal: 8,
+                                vertical: 4,
+                              ),
                               decoration: BoxDecoration(
                                 color: mine
                                     ? accent.withValues(alpha: 0.18)
                                     : AppColors.bgElevated,
-                                borderRadius:
-                                    BorderRadius.circular(20),
+                                borderRadius: BorderRadius.circular(20),
                                 border: mine
-                                    ? Border.all(
-                                        color: accent, width: 1.2)
+                                    ? Border.all(color: accent, width: 1.2)
                                     : null,
                               ),
                               child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    ReactionIcon(
-                                        id: r.id,
-                                        size: 16,
-                                        animated: false),
-                                    const SizedBox(width: 4),
-                                    Text('${r.count}',
-                                        style: const TextStyle(
-                                            fontSize: 13)),
-                                  ]),
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  ReactionIcon(
+                                    id: r.id,
+                                    size: 16,
+                                    animated: false,
+                                  ),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    '${r.count}',
+                                    style: TextStyle(fontSize: 13),
+                                  ),
+                                ],
+                              ),
                             ),
                           );
                         }),
@@ -377,66 +420,89 @@ class _PostCardState extends State<PostCard> {
                       ],
                     ),
                     const SizedBox(height: 10),
-                    Row(children: [
-                      GestureDetector(
-                        onTap: widget.onTapComments ?? widget.onTap,
-                        behavior: HitTestBehavior.opaque,
-                        child: Row(children: [
-                          Icon(Icons.chat_bubble_outline,
-                              size: 15,
-                              color: AppColors.textMuted),
-                          const SizedBox(width: 4),
-                          Text('${counters.comments}',
-                              style: TextStyle(
+                    Row(
+                      children: [
+                        GestureDetector(
+                          onTap: widget.onTapComments ?? widget.onTap,
+                          behavior: HitTestBehavior.opaque,
+                          child: Row(
+                            children: [
+                              Icon(
+                                Icons.chat_bubble_outline,
+                                size: 15,
+                                color: AppColors.textMuted,
+                              ),
+                              const SizedBox(width: 4),
+                              Text(
+                                '${counters.comments}',
+                                style: TextStyle(
                                   color: AppColors.textMuted,
-                                  fontSize: 13)),
-                        ]),
-                      ),
-                      const SizedBox(width: 16),
-                      GestureDetector(
-                        onTap: _toggleBookmark,
-                        behavior: HitTestBehavior.opaque,
-                        child: Row(children: [
-                          Icon(
-                            _isFavorited
-                                ? Icons.bookmark
-                                : Icons.bookmark_border,
-                            size: 15,
-                            color: _isFavorited
-                                ? accent
-                                : AppColors.textMuted,
+                                  fontSize: 13,
+                                ),
+                              ),
+                            ],
                           ),
-                          const SizedBox(width: 4),
-                          Text(
-                              '${counters.favorites}',
-                              style: TextStyle(
+                        ),
+                        const SizedBox(width: 16),
+                        GestureDetector(
+                          onTap: _toggleBookmark,
+                          behavior: HitTestBehavior.opaque,
+                          child: Row(
+                            children: [
+                              Icon(
+                                _isFavorited
+                                    ? Icons.bookmark
+                                    : Icons.bookmark_border,
+                                size: 15,
+                                color: _isFavorited
+                                    ? accent
+                                    : AppColors.textMuted,
+                              ),
+                              const SizedBox(width: 4),
+                              Text(
+                                '${counters.favorites}',
+                                style: TextStyle(
                                   color: _isFavorited
                                       ? accent
                                       : AppColors.textMuted,
-                                  fontSize: 13)),
-                        ]),
-                      ),
-                      const SizedBox(width: 16),
-                      GestureDetector(
-                        onTap: () => _sharePost(context),
-                        behavior: HitTestBehavior.opaque,
-                        child: Icon(Icons.share_outlined,
-                            size: 16, color: AppColors.textMuted),
-                      ),
-                      const Spacer(),
-                      if (counters.hits > 0) ...[
-                        Text(_fmtCount(counters.hits),
+                                  fontSize: 13,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 16),
+                        GestureDetector(
+                          onTap: () => _sharePost(context),
+                          behavior: HitTestBehavior.opaque,
+                          child: Icon(
+                            Icons.share_outlined,
+                            size: 16,
+                            color: AppColors.textMuted,
+                          ),
+                        ),
+                        const Spacer(),
+                        if (counters.hits > 0) ...[
+                          Text(
+                            _fmtCount(counters.hits),
                             style: TextStyle(
-                                color: AppColors.textMuted, fontSize: 13)),
-                        const SizedBox(width: 4),
-                        Icon(Icons.remove_red_eye_outlined,
-                            size: 15, color: AppColors.textMuted),
+                              color: AppColors.textMuted,
+                              fontSize: 13,
+                            ),
+                          ),
+                          const SizedBox(width: 4),
+                          Icon(
+                            Icons.remove_red_eye_outlined,
+                            size: 15,
+                            color: AppColors.textMuted,
+                          ),
+                        ],
                       ],
-                    ]),
+                    ),
                     if (_topComment != null) ...[
                       const SizedBox(height: 12),
                       _PopularCommentPreview(
-                        comment: _topComment,
+                        comment: _topComment!.rawJson,
                         onTap: widget.onTapComments ?? widget.onTap,
                       ),
                     ],
@@ -452,22 +518,25 @@ class _PostCardState extends State<PostCard> {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
-                      color: AppColors.textMuted, fontSize: 13),
+                    color: AppColors.textMuted,
+                    fontSize: 13,
+                  ),
                 ),
               ),
             ],
           ],
-          ),   // Column
-        ),     // GlassCard
-    );         // GestureDetector
+        ), // Column
+      ), // GlassCard
+    ); // GestureDetector
   }
 
   void _sharePost(BuildContext context) {
     final postId = widget.post.id;
     final url = widget.post.url ?? 'https://dtf.ru/$postId';
     Clipboard.setData(ClipboardData(text: url));
-    ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Ссылка скопирована')));
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('Ссылка скопирована')));
   }
 
   void _showPostMenu(BuildContext context) {
@@ -475,8 +544,7 @@ class _PostCardState extends State<PostCard> {
     final author = widget.post.author;
     final authorId = author?.id;
     final authorName = author?.name ?? '';
-    final currentNote =
-        authorId != null ? settings.userNotes[authorId] : null;
+    final currentNote = authorId != null ? settings.userNotes[authorId] : null;
 
     showModalBottomSheet(
       context: context,
@@ -496,19 +564,25 @@ class _PostCardState extends State<PostCard> {
             const SizedBox(height: 16),
             if (authorId != null)
               ListTile(
-                leading: Icon(Icons.label_outline,
-                    color: AppColors.textPrimary),
+                leading: Icon(
+                  Icons.label_outline,
+                  color: AppColors.textPrimary,
+                ),
                 title: Text(
                   currentNote != null
                       ? 'Изменить заметку для $authorName'
                       : 'Добавить заметку для $authorName',
-                  style:
-                      TextStyle(color: AppColors.textPrimary),
+                  style: TextStyle(color: AppColors.textPrimary),
                 ),
                 onTap: () {
                   Navigator.pop(context);
-                  _showNoteDialog(context, settings, authorId,
-                      authorName, currentNote);
+                  _showNoteDialog(
+                    context,
+                    settings,
+                    authorId,
+                    authorName,
+                    currentNote,
+                  );
                 },
               ),
             ListTile(
@@ -518,8 +592,7 @@ class _PostCardState extends State<PostCard> {
               ),
               title: Text(
                 _collapsed ? 'Развернуть' : 'Свернуть',
-                style:
-                    TextStyle(color: AppColors.textPrimary),
+                style: TextStyle(color: AppColors.textPrimary),
               ),
               onTap: () {
                 Navigator.pop(context);
@@ -533,8 +606,13 @@ class _PostCardState extends State<PostCard> {
     );
   }
 
-  void _showNoteDialog(BuildContext context, SettingsService settings,
-      int userId, String name, String? current) {
+  void _showNoteDialog(
+    BuildContext context,
+    SettingsService settings,
+    int userId,
+    String name,
+    String? current,
+  ) {
     final ctrl = TextEditingController(text: current ?? '');
     showDialog(
       context: context,
@@ -544,8 +622,7 @@ class _PostCardState extends State<PostCard> {
           controller: ctrl,
           autofocus: true,
           style: TextStyle(color: AppColors.textPrimary),
-          decoration:
-              const InputDecoration(hintText: 'Напиши заметку...'),
+          decoration: const InputDecoration(hintText: 'Напиши заметку...'),
         ),
         actions: [
           if (current != null)
@@ -554,19 +631,18 @@ class _PostCardState extends State<PostCard> {
                 settings.setUserNote(userId, '');
                 Navigator.pop(context);
               },
-              child: const Text('Удалить',
-                  style: TextStyle(color: Colors.red)),
+              child: Text('Удалить', style: TextStyle(color: Colors.red)),
             ),
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('Отмена'),
+            child: Text('Отмена'),
           ),
           TextButton(
             onPressed: () {
               settings.setUserNote(userId, ctrl.text);
               Navigator.pop(context);
             },
-            child: const Text('Сохранить'),
+            child: Text('Сохранить'),
           ),
         ],
       ),
@@ -636,9 +712,10 @@ class _PopularCommentPreview extends StatelessWidget {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
-                        color: AppColors.textSecondary,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600),
+                      color: AppColors.textSecondary,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
                   if (text.isNotEmpty) ...[
                     const SizedBox(height: 3),
@@ -647,9 +724,10 @@ class _PopularCommentPreview extends StatelessWidget {
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
-                          color: AppColors.textPrimary,
-                          fontSize: 13,
-                          height: 1.35),
+                        color: AppColors.textPrimary,
+                        fontSize: 13,
+                        height: 1.35,
+                      ),
                     ),
                   ],
                 ],
@@ -665,10 +743,10 @@ class _PopularCommentPreview extends StatelessWidget {
                   height: 48,
                   fit: BoxFit.cover,
                   memCacheWidth: 140,
-                  placeholder: (_, _) => Container(
-                      width: 48, height: 48, color: AppColors.bgCard),
-                  errorWidget: (_, _, _) => Container(
-                      width: 48, height: 48, color: AppColors.bgCard),
+                  placeholder: (_, _) =>
+                      Container(width: 48, height: 48, color: AppColors.bgCard),
+                  errorWidget: (_, _, _) =>
+                      Container(width: 48, height: 48, color: AppColors.bgCard),
                 ),
               ),
             ],

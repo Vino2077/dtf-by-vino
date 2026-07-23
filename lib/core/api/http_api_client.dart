@@ -3,13 +3,14 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:http/http.dart' as http;
+import 'package:http_parser/http_parser.dart';
 
 import '../../api/api_config.dart';
 import 'api_client.dart';
 import 'app_failure.dart';
 import 'result.dart';
 
-class HttpApiClient implements ApiClient {
+class HttpApiClient implements ApiClient, UploadApiClient {
   HttpApiClient(
     this._client,
     this._tokenProvider, [
@@ -54,6 +55,42 @@ class HttpApiClient implements ApiClient {
           )
           ..headers.addAll(_headers())
           ..fields.addAll(fields);
+    return http.Response.fromStream(await _client.send(request));
+  });
+
+  @override
+  Future<Result<Object?>> uploadFile(
+    String path, {
+    required String field,
+    required String filePath,
+    String? apiVersion,
+  }) => _execute(() async {
+    final request = http.MultipartRequest(
+      'POST',
+      ApiConfig.url(path, version: apiVersion ?? ApiConfig.vDefault),
+    )..headers.addAll(_headers());
+    request.files.add(await http.MultipartFile.fromPath(field, filePath));
+    return http.Response.fromStream(await _client.send(request));
+  });
+
+  @override
+  Future<Result<Object?>> postJsonMultipart(
+    String path, {
+    required String field,
+    required String json,
+    String? apiVersion,
+  }) => _execute(() async {
+    final request = http.MultipartRequest(
+      'POST',
+      ApiConfig.url(path, version: apiVersion ?? ApiConfig.vDefault),
+    )..headers.addAll(_headers());
+    request.files.add(
+      http.MultipartFile.fromString(
+        field,
+        json,
+        contentType: MediaType('application', 'json'),
+      ),
+    );
     return http.Response.fromStream(await _client.send(request));
   });
 

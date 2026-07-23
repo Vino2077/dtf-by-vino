@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../api/dtf_api.dart';
+import '../features/editor/data/editor_repository.dart';
+import '../features/editor/presentation/editor_controller.dart';
 import '../services/settings_service.dart';
 import '../theme.dart';
 import '../screens/editor_screen.dart';
@@ -21,23 +22,28 @@ class AppDrawer extends StatefulWidget {
 }
 
 class _AppDrawerState extends State<AppDrawer> {
-  List<dynamic> _subs = [];
+  late final EditorController _controller;
+  List<Map<String, dynamic>> get _subs => _controller.subsites
+      .map((subsite) => subsite.rawJson)
+      .toList(growable: false);
   bool _loading = true;
 
   @override
   void initState() {
     super.initState();
+    _controller = EditorController(context.read<EditorRepository>());
     _loadSubs();
   }
 
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
   Future<void> _loadSubs() async {
-    final settings = context.read<SettingsService>();
-    final subs = await DtfApi.getMySubsites(settings);
-    if (!mounted) return;
-    setState(() {
-      _subs = subs;
-      _loading = false;
-    });
+    await _controller.loadSubsites();
+    if (mounted) setState(() => _loading = false);
   }
 
   /// Favorites first, then the rest — preserving API order within each group.
@@ -88,9 +94,13 @@ class _AppDrawerState extends State<AppDrawer> {
                   children: [
                     Icon(Icons.search, color: AppColors.textMuted, size: 20),
                     SizedBox(width: 10),
-                    Text('Поиск по DTF',
-                        style: TextStyle(
-                            color: AppColors.textMuted, fontSize: 14)),
+                    Text(
+                      'Поиск по DTF',
+                      style: TextStyle(
+                        color: AppColors.textMuted,
+                        fontSize: 14,
+                      ),
+                    ),
                   ],
                 ),
               ),
@@ -117,11 +127,14 @@ class _AppDrawerState extends State<AppDrawer> {
             padding: EdgeInsets.fromLTRB(16, 8, 16, 8),
             child: Align(
               alignment: Alignment.centerLeft,
-              child: Text('Подписки',
-                  style: TextStyle(
-                      color: AppColors.textPrimary,
-                      fontSize: 16,
-                      fontWeight: FontWeight.w700)),
+              child: Text(
+                'Подписки',
+                style: TextStyle(
+                  color: AppColors.textPrimary,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
             ),
           ),
           Expanded(child: _buildSubs(accent)),
@@ -143,7 +156,7 @@ class _AppDrawerState extends State<AppDrawer> {
 
   Widget _buildSubs(Color accent) {
     if (_loading) {
-      return const Center(child: CircularProgressIndicator());
+      return Center(child: CircularProgressIndicator());
     }
     if (_subs.isEmpty) {
       return Center(
@@ -172,8 +185,11 @@ class _DrawerAction extends StatelessWidget {
   final IconData icon;
   final String label;
   final VoidCallback onTap;
-  const _DrawerAction(
-      {required this.icon, required this.label, required this.onTap});
+  const _DrawerAction({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -186,11 +202,14 @@ class _DrawerAction extends StatelessWidget {
           children: [
             Icon(icon, color: accent, size: 24),
             const SizedBox(width: 16),
-            Text(label,
-                style: TextStyle(
-                    color: AppColors.textPrimary,
-                    fontSize: 16,
-                    fontWeight: FontWeight.w500)),
+            Text(
+              label,
+              style: TextStyle(
+                color: AppColors.textPrimary,
+                fontSize: 16,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
           ],
         ),
       ),
@@ -225,9 +244,10 @@ class _SubTile extends StatelessWidget {
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
-                    color: AppColors.textPrimary,
-                    fontSize: 15,
-                    fontWeight: FontWeight.w500),
+                  color: AppColors.textPrimary,
+                  fontSize: 15,
+                  fontWeight: FontWeight.w500,
+                ),
               ),
             ),
             IconButton(
@@ -238,7 +258,9 @@ class _SubTile extends StatelessWidget {
               ),
               onPressed: id == null
                   ? null
-                  : () => context.read<SettingsService>().toggleFavoriteSubsite(id),
+                  : () => context.read<SettingsService>().toggleFavoriteSubsite(
+                      id,
+                    ),
             ),
           ],
         ),

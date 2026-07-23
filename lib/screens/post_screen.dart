@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:provider/provider.dart';
 import 'package:image_picker/image_picker.dart';
-import '../api/dtf_api.dart';
 import '../features/comments/data/comments_repository.dart';
+import '../features/editor/data/editor_repository.dart';
 import '../features/comments/presentation/comments_controller.dart';
 import '../features/posts/data/post_repository.dart';
 import '../features/posts/presentation/post_controller.dart';
@@ -425,12 +425,14 @@ class _PostScreenState extends State<PostScreen> {
 
   Future<void> _attachGif() async {
     final settings = context.read<SettingsService>();
+    final editorRepository = context.read<EditorRepository>();
     final gif = await showGifPicker(context);
     if (gif == null || !mounted) return;
     setState(() => _attaching = true);
     // Save to recents, then resolve to a DTF media object via uploader.
     await settings.addRecentGif(gif.toJson());
-    final media = await DtfApi.extractMediaByUrl(gif.extractUrl, settings);
+    final result = await editorRepository.extractMedia(gif.extractUrl);
+    final media = result.valueOrNull;
     if (!mounted) return;
     setState(() {
       _attaching = false;
@@ -462,7 +464,10 @@ class _PostScreenState extends State<PostScreen> {
     final XFile? file = await picker.pickMedia();
     if (file == null || !mounted) return;
     setState(() => _attaching = true);
-    final media = await DtfApi.uploadMediaFile(file.path, settings);
+    final result = await context.read<EditorRepository>().uploadMedia(
+      file.path,
+    );
+    final media = result.valueOrNull;
     if (!mounted) return;
     setState(() {
       _attaching = false;

@@ -39,6 +39,60 @@ class DtfCommentsRepository implements CommentsRepository {
     return _commentsResult(result);
   }
 
+  @override
+  Future<Result<Comment?>> loadTopComment(int postId) async {
+    final result = await _apiClient.get(
+      'comments?contentId=$postId&sorting=hotness&count=1',
+      apiVersion: ApiConfig.vComments,
+    );
+    final parsed = _commentsResult(result);
+    return switch (parsed) {
+      Success<List<Comment>>(:final value) => Success(
+        value.isEmpty ? null : value.first,
+      ),
+      Failure<List<Comment>>(:final failure) => Failure(failure),
+    };
+  }
+
+  @override
+  Future<Result<List<Map<String, dynamic>>>> loadReactionUsers({
+    required int id,
+    required bool isComment,
+    int? reactionId,
+  }) async {
+    final kind = isComment ? 'comment' : 'content';
+    final filter = reactionId == null ? '' : '?reaction=$reactionId';
+    final result = await _apiClient.get('$kind/$id/reactions$filter');
+    if (result case Failure<Object?>(:final failure)) return Failure(failure);
+    final value = (result as Success<Object?>).value;
+    final items = value is List
+        ? value
+        : asList(
+            dig(value, ['items']) ??
+                dig(value, ['reactions']) ??
+                dig(value, ['users']),
+          );
+    final users = <Map<String, dynamic>>[];
+    for (final item in items.whereType<Map>()) {
+      if (item['subsites'] is List) {
+        for (final subsite in item['subsites'] as List) {
+          users.add({
+            'subsite': subsite,
+            'reactionId': asInt(item['id'] ?? item['reactionId']),
+          });
+        }
+      } else {
+        users.add({
+          'subsite': item['subsite'] ?? item['author'] ?? item,
+          'reactionId': asInt(
+            item['reactionId'] ?? dig(item, ['reaction', 'id']) ?? item['id'],
+          ),
+        });
+      }
+    }
+    return Success(users);
+  }
+
   Result<List<Comment>> _commentsResult(Result<Object?> result) {
     switch (result) {
       case Failure<Object?>(:final failure):

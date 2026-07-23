@@ -11,6 +11,14 @@ abstract interface class CommentsRepository {
 
   Future<Result<List<Comment>>> loadThread(int postId, String threadId);
 
+  Future<Result<Comment?>> loadTopComment(int postId);
+
+  Future<Result<List<Map<String, dynamic>>>> loadReactionUsers({
+    required int id,
+    required bool isComment,
+    int? reactionId,
+  });
+
   Future<Result<Comment>> add({
     required int postId,
     required String text,
