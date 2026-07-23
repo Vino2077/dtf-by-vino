@@ -1,6 +1,7 @@
 import 'package:dtf_app/core/api/api_client.dart';
 import 'package:dtf_app/core/api/result.dart';
 import 'package:dtf_app/features/bookmarks/data/dtf_bookmarks_repository.dart';
+import 'package:dtf_app/features/notifications/data/dtf_notifications_repository.dart';
 import 'package:dtf_app/features/profile/data/dtf_profile_repository.dart';
 import 'package:dtf_app/features/search/data/dtf_search_repository.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -93,6 +94,20 @@ void main() {
       );
     },
   );
+
+  test('notifications repository parses updates and unread count', () async {
+    final api = FakeApi()
+      ..responses['subsite/me/updates?html=true&is_read=2'] = const Success({
+        'items': [
+          {'id': 9, 'type': 'reply'},
+        ],
+      })
+      ..responses['subsite/me/updates/count'] = const Success({'count': 4});
+    final repository = DtfNotificationsRepository(api);
+
+    expect((await repository.load()).valueOrNull?.single.id, 9);
+    expect((await repository.unreadCount()).valueOrNull, 4);
+  });
 
   test('profile repository preserves pagination cursor', () async {
     final path = 'timeline?subsitesIds=7&sorting=new&count=20';

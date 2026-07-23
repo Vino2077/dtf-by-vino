@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:http/http.dart' as http;
-import 'api/dtf_api.dart';
+
 import 'core/api/api_client.dart';
 import 'core/api/http_api_client.dart';
 import 'features/bookmarks/data/bookmarks_repository.dart';
@@ -12,6 +12,8 @@ import 'features/comments/data/comments_repository.dart';
 import 'features/comments/data/dtf_comments_repository.dart';
 import 'features/feed/data/dtf_feed_repository.dart';
 import 'features/feed/data/feed_repository.dart';
+import 'features/notifications/data/dtf_notifications_repository.dart';
+import 'features/notifications/data/notifications_repository.dart';
 import 'features/posts/data/dtf_post_repository.dart';
 import 'features/profile/data/dtf_profile_repository.dart';
 import 'features/profile/data/profile_repository.dart';
@@ -86,6 +88,10 @@ void main() async {
         ),
         Provider<ProfileRepository>(
           create: (context) => DtfProfileRepository(context.read<ApiClient>()),
+        ),
+        Provider<NotificationsRepository>(
+          create: (context) =>
+              DtfNotificationsRepository(context.read<ApiClient>()),
         ),
       ],
       child: const DtfApp(),
@@ -165,9 +171,10 @@ class _MainScreenState extends State<MainScreen> {
   Future<void> _loadCurrentUser() async {
     final settings = context.read<SettingsService>();
     if (!settings.isLoggedIn) return;
-    final me = await DtfApi.getMe(settings);
-    if (mounted && me is Map) {
-      settings.setCurrentUser(me['id'] as int?, me['isPlus'] == true);
+    final result = await context.read<ProfileRepository>().loadMe();
+    final me = result.valueOrNull;
+    if (mounted && me != null) {
+      settings.setCurrentUser(me.id, me.rawJson['isPlus'] == true);
     }
   }
 
@@ -181,8 +188,9 @@ class _MainScreenState extends State<MainScreen> {
     final settings = context.read<SettingsService>();
     if (!settings.isLoggedIn) return;
     if (_index == _notificationsTab) return;
-    final count = await DtfApi.getNotificationsCount(settings);
-    if (mounted) settings.setNotificationCount(count);
+    final result = await context.read<NotificationsRepository>().unreadCount();
+    final count = result.valueOrNull;
+    if (mounted && count != null) settings.setNotificationCount(count);
   }
 
   void _onTapTab(int i) {
