@@ -304,7 +304,10 @@ class BlockView extends StatelessWidget {
             ClipRRect(
               borderRadius: BorderRadius.circular(6),
               child: CachedNetworkImage(
-                imageUrl: OsnovaImage(b.thumbUuid).preview(96),
+                // Link blocks sometimes give a full favicon URL instead of a uuid.
+                imageUrl: b.thumbUuid!.startsWith('http')
+                    ? b.thumbUuid!
+                    : OsnovaImage(b.thumbUuid).preview(96),
                 width: 48,
                 height: 48,
                 fit: BoxFit.cover,

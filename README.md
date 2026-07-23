@@ -34,7 +34,7 @@ flutter build apk --release
 # готовый APK: build/app/outputs/flutter-apk/app-release.apk
 ```
 
-Для поиска GIF используется [Tenor API](https://developers.google.com/tenor) — ключ уже вшит в код (`lib/services/tenor_service.dart`); при желании замени на свой бесплатный.
+Для поиска GIF используется [GIPHY API](https://developers.giphy.com/) — ключ уже вшит в код (`lib/services/giphy_service.dart`); при желании замени на свой бесплатный.
 
 ## 🧩 Технологии
 

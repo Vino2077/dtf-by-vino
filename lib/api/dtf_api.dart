@@ -99,6 +99,31 @@ class DtfApi {
     }
   }
 
+  /// JSON POST (Content-Type: application/json). Some endpoints (e.g. the
+  /// messenger and subscription) expect a JSON body, not form fields.
+  static Future<ApiResult> _postJson(
+    String path,
+    SettingsService settings, {
+    String version = ApiConfig.vDefault,
+    Map<String, dynamic> body = const {},
+  }) async {
+    try {
+      final headers = {..._headers(settings), 'Content-Type': 'application/json'};
+      final res = await http
+          .post(ApiConfig.url(path, version: version),
+              headers: headers, body: jsonEncode(body))
+          .timeout(ApiConfig.timeout);
+      if (res.statusCode >= 200 && res.statusCode < 300) {
+        dynamic result;
+        try { result = jsonDecode(res.body)['result']; } catch (_) {}
+        return ApiResult.success(result);
+      }
+      return ApiResult.failure(_serverMessage(res));
+    } catch (_) {
+      return const ApiResult.failure('Ошибка сети');
+    }
+  }
+
   static String _serverMessage(http.Response res) {
     try {
       final j = jsonDecode(res.body);
@@ -342,21 +367,18 @@ class DtfApi {
     return asList(dig(result, ['items']));
   }
 
-  // --- Subscription (best-effort across known endpoints) ---
+  // --- Subscription ---
+  // Confirmed from the DTF web client: POST subsite/subscription with a JSON
+  // body {id, action: "subscribe"|"unsubscribe", isSubscribedToNotifications}.
+  // (The old form-encoded subscribe/toggle guesses never worked.)
   static Future<bool> toggleSubscription(int subsiteId, bool subscribe, SettingsService settings) async {
     if (!settings.isLoggedIn) return false;
-    final attempts = <Future<ApiResult> Function()>[
-      () => _multipart('subscribe/toggle', settings,
-          fields: {'id': '$subsiteId', 'type': '3', 'action': subscribe ? '1' : '0'}),
-      () => _postForm('subsite/$subsiteId/${subscribe ? 'subscribe' : 'unsubscribe'}', settings),
-      () => _postForm('subscription/${subscribe ? 'subscribe' : 'unsubscribe'}', settings,
-          body: {'subsiteId': '$subsiteId'}),
-    ];
-    for (final attempt in attempts) {
-      final r = await attempt();
-      if (r.ok) return true;
-    }
-    return false;
+    final r = await _postJson('subsite/subscription', settings, body: {
+      'id': subsiteId,
+      'action': subscribe ? 'subscribe' : 'unsubscribe',
+      'isSubscribedToNotifications': false,
+    });
+    return r.ok;
   }
 
   // --- Favorites (bookmarks) ---

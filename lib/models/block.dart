@@ -177,12 +177,18 @@ Block parseBlock(dynamic raw) {
       );
 
     case 'link':
+      // Real shape: data.link.data = {url, title, description,
+      // image.data.uuid (sometimes a full favicon URL), hostname}.
+      final linkData =
+          (data['link'] is Map && (data['link'] as Map)['data'] is Map)
+              ? (data['link'] as Map)['data'] as Map
+              : data;
       return LinkCardBlock(
         service: 'link',
-        url: _firstUrl(data),
-        title: data['title']?.toString(),
-        subtitle: data['description']?.toString(),
-        thumbUuid: digString(data, ['image', 'data', 'uuid']),
+        url: linkData['url']?.toString() ?? _firstUrl(data),
+        title: linkData['title']?.toString(),
+        subtitle: linkData['description']?.toString(),
+        thumbUuid: digString(linkData, ['image', 'data', 'uuid']),
       );
 
     case 'button':

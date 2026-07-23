@@ -2,7 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:provider/provider.dart';
-import '../services/tenor_service.dart';
+import '../services/giphy_service.dart';
 import '../services/settings_service.dart';
 import '../theme.dart';
 
@@ -65,7 +65,7 @@ class _GifPickerSheetState extends State<_GifPickerSheet> {
 
   Future<void> _search(String query) async {
     setState(() { _loading = true; _showingRecent = false; });
-    final results = await TenorService.search(query);
+    final results = await GiphyService.search(query);
     if (!mounted) return;
     setState(() { _results = results; _loading = false; });
   }
@@ -94,7 +94,7 @@ class _GifPickerSheetState extends State<_GifPickerSheet> {
                   style: const TextStyle(color: Colors.white, fontSize: 14),
                   onChanged: _onQueryChanged,
                   decoration: InputDecoration(
-                    hintText: 'Поиск GIF в Tenor',
+                    hintText: 'Поиск GIF в GIPHY',
                     hintStyle: const TextStyle(color: Colors.grey),
                     prefixIcon: const Icon(Icons.search, color: Colors.grey, size: 20),
                     filled: true,

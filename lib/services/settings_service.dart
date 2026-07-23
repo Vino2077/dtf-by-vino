@@ -19,6 +19,7 @@ class SettingsService extends ChangeNotifier {
   static const _kBlackTheme = 'black_theme';
   static const _kReactionUsage = 'reaction_usage';
   static const _kFavoriteSubsites = 'favorite_subsites';
+  static const _kHideCompanyPosts = 'hide_company_posts';
 
   static const _defaultAccent = 0xFF5B82F2; // DTF blue (redesign accent)
 
@@ -26,6 +27,8 @@ class SettingsService extends ChangeNotifier {
   bool autoCollapseViewed = false;
   bool autoExpandComments = true;
   bool blackTheme = false;
+  // Hide posts from company blogs (the black "✓" verified-company mark).
+  bool hideCompanyPosts = false;
   List<String> filterKeywords = [];
   Map<int, String> userNotes = {};
   Set<int> viewedPostIds = {};
@@ -126,11 +129,17 @@ class SettingsService extends ChangeNotifier {
     _bgBlur = prefs.getDouble(_kBgBlur) ?? 10.0;
     _bgDim = prefs.getDouble(_kBgDim) ?? 0.45;
     blackTheme = prefs.getBool(_kBlackTheme) ?? false;
+    hideCompanyPosts = prefs.getBool(_kHideCompanyPosts) ?? false;
   }
 
   Future<void> setBlackTheme(bool v) async {
     blackTheme = v;
     await _prefs((p) => p.setBool(_kBlackTheme, v));
+  }
+
+  Future<void> setHideCompanyPosts(bool v) async {
+    hideCompanyPosts = v;
+    await _prefs((p) => p.setBool(_kHideCompanyPosts, v));
   }
 
   /// Records that [reactionId] was used, so the picker can surface the user's
@@ -264,6 +273,8 @@ class SettingsService extends ChangeNotifier {
   }
 
   bool isFiltered(dynamic post) {
+    // Hide company-blog posts (black check-mark) when the user opted out.
+    if (hideCompanyPosts && post['author']?['isCompany'] == true) return true;
     if (filterKeywords.isEmpty) return false;
     final title = (post['title'] ?? '').toString().toLowerCase();
     final blocks = post['blocks'] as List? ?? [];

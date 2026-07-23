@@ -52,6 +52,12 @@ class SettingsScreen extends StatelessWidget {
           ),
           _batchSizeTile(context, settings),
           _section('Фильтры'),
+          _toggle(
+            'Скрывать посты компаний',
+            'Посты блогов с чёрной галочкой (компании) не появятся в ленте',
+            settings.hideCompanyPosts,
+            (v) => settings.setHideCompanyPosts(v),
+          ),
           _filterKeywordsTile(context, settings),
           _section('Заметки о пользователях'),
           _userNotesTile(context, settings),
