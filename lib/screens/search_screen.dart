@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../api/dtf_api.dart';
+import '../models/post.dart';
 import '../services/settings_service.dart';
 import '../theme.dart';
 import '../widgets/avatar.dart';
@@ -18,7 +19,7 @@ class SearchScreen extends StatefulWidget {
 
 class _SearchScreenState extends State<SearchScreen> {
   final _ctrl = TextEditingController();
-  List<dynamic> _results = [];
+  List<Post> _results = [];
   bool _loading = false;
   String _lastQuery = '';
 
@@ -135,14 +136,14 @@ class _SearchScreenState extends State<SearchScreen> {
         itemBuilder: (_, i) {
           final post = _results[i];
           return PostCard(
-            key: ValueKey(post['id']),
+            key: ValueKey(post.id),
             post: post,
             onTap: () => Navigator.push(
               context,
               MaterialPageRoute(
                 builder: (_) => PostScreen(
-                  postId: post['id'] as int,
-                  title: post['title'] ?? '',
+                  postId: post.id,
+                  title: post.title,
                   postData: post,
                 ),
               ),

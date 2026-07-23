@@ -1,10 +1,9 @@
-import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:provider/provider.dart';
 import 'package:image_picker/image_picker.dart';
 import '../api/dtf_api.dart';
-import '../models/block.dart';
+import '../models/post.dart';
 import '../services/settings_service.dart';
 import '../services/restorer_service.dart';
 import '../theme.dart';
@@ -20,7 +19,7 @@ import '../widgets/badges.dart';
 class PostScreen extends StatefulWidget {
   final int postId;
   final String title;
-  final dynamic postData;
+  final Post? postData;
   final int? scrollToCommentId; // optional: open straight to a comment
   final bool openToComments; // optional: open straight to the comments section
 
@@ -38,7 +37,7 @@ class PostScreen extends StatefulWidget {
 }
 
 class _PostScreenState extends State<PostScreen> {
-  dynamic _post;
+  Post? _post;
   List<dynamic> _comments = [];
   CommentTreeIndex _commentTree = CommentTreeIndex.fromComments(const []);
   List<VisibleComment> _visibleComments = const [];
@@ -488,21 +487,23 @@ class _PostScreenState extends State<PostScreen> {
       return;
     }
     // Optimistic: update counters + my reaction instantly, no page reload.
-    final reactions = (_post['reactions'] as Map?) ?? {'counters': [], 'reactionId': 0};
-    _post['reactions'] = reactions;
-    final snapshot = jsonEncode(reactions); // for exact rollback
-    final before = (reactions['reactionId'] as int?) ?? 0;
-    final now = applyReactionToggle(reactions, reactionId);
-    setState(() {});
-    showReactionToast(context, reactionId, added: now != 0 && now != before);
+    final post = _post;
+    if (post == null) return;
+    final snapshot = post.reactions;
+    final updated = snapshot.toggle(reactionId);
+    setState(() => _post = post.copyWith(reactions: updated));
+    showReactionToast(
+      context,
+      reactionId,
+      added: updated.selectedId != 0 && updated.selectedId != snapshot.selectedId,
+    );
 
     // Fire the request in the background; restore the snapshot on failure.
     final result = await DtfApi.setReaction(
       id: widget.postId, isComment: false, reactionId: reactionId, settings: settings);
     if (!mounted) return;
     if (result['ok'] != true) {
-      _post['reactions'] = jsonDecode(snapshot);
-      setState(() {});
+      setState(() => _post = post.copyWith(reactions: snapshot));
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Реакция: ${result['error'] ?? 'ошибка'}'),
             backgroundColor: AppColors.bgElevated),
@@ -518,11 +519,13 @@ class _PostScreenState extends State<PostScreen> {
       );
       return;
     }
-    final isFav = _post?['isFavorited'] == true;
+    final post = _post;
+    if (post == null) return;
+    final isFav = post.isFavorited;
     final ok = await DtfApi.toggleFavorite(widget.postId, 1, !isFav, settings);
     if (!mounted) return;
     if (ok) {
-      setState(() => _post['isFavorited'] = !isFav);
+      setState(() => _post = post.copyWith(isFavorited: !isFav));
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(!isFav ? 'Добавлено в закладки' : 'Убрано из закладок'),
             backgroundColor: AppColors.bgElevated),
@@ -579,17 +582,17 @@ class _PostScreenState extends State<PostScreen> {
           onPressed: () => Navigator.pop(context),
         ),
         title: Text(
-          _post?['subsite']?['name'] ?? widget.title,
+          _post?.subsite?.name ?? widget.title,
           style: const TextStyle(fontSize: 15),
           overflow: TextOverflow.ellipsis,
         ),
         actions: [
           IconButton(
             icon: Icon(
-              _post?['isFavorited'] == true
+              _post?.isFavorited == true
                   ? Icons.bookmark
                   : Icons.bookmark_border,
-              color: _post?['isFavorited'] == true
+              color: _post?.isFavorited == true
                   ? accent
                   : AppColors.textPrimary,
             ),
@@ -675,27 +678,28 @@ class _PostScreenState extends State<PostScreen> {
   }
 
   Widget _buildPostHeader() {
-    if (_post == null) return const SizedBox();
-    final author = _post['author'];
-    final date = _post['date'];
+    final post = _post;
+    if (post == null) return const SizedBox();
+    final author = post.author;
+    final date = post.date;
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
       child: Row(children: [
         Avatar.fromData(
-          author?['avatar'],
+          author?.avatar,
           size: 42,
-          onTap: () => openUserProfile(context, author),
+          onTap: () => openUserProfile(context, author?.rawJson),
         ),
         const SizedBox(width: 12),
         Expanded(
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             GestureDetector(
-              onTap: () => openUserProfile(context, author),
+              onTap: () => openUserProfile(context, author?.rawJson),
               child: Row(children: [
-                Text(author?['name'] ?? '',
+                Text(author?.name ?? '',
                     style: TextStyle(
                         color: AppColors.textPrimary, fontWeight: FontWeight.bold, fontSize: 15)),
-                AuthorBadge(author: author, size: 14),
+                AuthorBadge(author: author?.rawJson, size: 14),
               ]),
             ),
             Text(
@@ -709,12 +713,13 @@ class _PostScreenState extends State<PostScreen> {
   }
 
   Widget _buildReactions() {
-    if (_post == null) return const SizedBox();
-    final myReaction = (_post['reactions']?['reactionId'] as int?) ?? 0;
-    final reactions = (_post['reactions']?['counters'] as List? ?? [])
-        .where((r) => (r['count'] ?? 0) > 0)
+    final post = _post;
+    if (post == null) return const SizedBox();
+    final myReaction = post.reactions.selectedId;
+    final reactions = post.reactions.counters
+        .where((reaction) => reaction.count > 0)
         .toList()
-      ..sort((a, b) => (b['count'] as int).compareTo(a['count'] as int));
+      ..sort((a, b) => b.count.compareTo(a.count));
 
     final accent = Theme.of(context).colorScheme.primary;
     return Padding(
@@ -724,9 +729,9 @@ class _PostScreenState extends State<PostScreen> {
         runSpacing: 8,
         children: [
           ...reactions.map((r) {
-            final mine = r['id'] == myReaction;
+            final mine = r.id == myReaction;
             return BurstTap(
-              onTap: () => _reactToPost(r['id'] as int),
+              onTap: () => _reactToPost(r.id),
               onLongPress: () => showReactionUsers(
                   context: context,
                   id: widget.postId,
@@ -749,12 +754,12 @@ class _PostScreenState extends State<PostScreen> {
                 ),
                 child: Row(mainAxisSize: MainAxisSize.min, children: [
                   ReactionIcon(
-                    id: r['id'] as int,
+                    id: r.id,
                     size: 18,
                     animated: false,
                   ),
                   const SizedBox(width: 6),
-                  Text('${r['count']}',
+                  Text('${r.count}',
                       style: TextStyle(
                           color: AppColors.textPrimary,
                           fontSize: 14,
@@ -770,24 +775,25 @@ class _PostScreenState extends State<PostScreen> {
   }
 
   Widget _buildStats() {
-    if (_post == null) return const SizedBox();
-    final counters = _post['counters'];
+    final post = _post;
+    if (post == null) return const SizedBox();
+    final counters = post.counters;
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
       child: Row(children: [
         Icon(Icons.remove_red_eye_outlined, size: 15, color: AppColors.textMuted),
         const SizedBox(width: 4),
-        Text('${counters?['hits'] ?? 0}',
+        Text('${counters.hits}',
             style: TextStyle(color: AppColors.textMuted, fontSize: 13)),
         const SizedBox(width: 16),
         Icon(Icons.bookmark_border, size: 15, color: AppColors.textMuted),
         const SizedBox(width: 4),
-        Text('${counters?['favorites'] ?? 0}',
+        Text('${counters.favorites}',
             style: TextStyle(color: AppColors.textMuted, fontSize: 13)),
         const SizedBox(width: 16),
         Icon(Icons.chat_bubble_outline, size: 15, color: AppColors.textMuted),
         const SizedBox(width: 4),
-        Text('${counters?['comments'] ?? 0}',
+        Text('${counters.comments}',
             style: TextStyle(color: AppColors.textMuted, fontSize: 13)),
       ]),
     );
@@ -808,8 +814,8 @@ class _PostScreenState extends State<PostScreen> {
                   fontWeight: FontWeight.bold,
                   height: 1.3),
               children: [
-                TextSpan(text: _post?['title'] ?? widget.title),
-                if (_post?['isEditorial'] == true) ...[
+                TextSpan(text: _post?.title ?? widget.title),
+                if (_post?.isEditorial == true) ...[
                   const WidgetSpan(child: SizedBox(width: 6)),
                   WidgetSpan(
                     alignment: PlaceholderAlignment.middle,
@@ -820,8 +826,7 @@ class _PostScreenState extends State<PostScreen> {
             ),
           ),
           const SizedBox(height: 16),
-          ...(_post?['blocks'] as List? ?? [])
-              .map((b) => BlockView(block: parseBlock(b))),
+          ...?_post?.blocks.map((block) => BlockView(block: block)),
         ],
       ),
     );
@@ -1083,9 +1088,8 @@ class _PostScreenState extends State<PostScreen> {
     );
   }
 
-  String _formatDate(dynamic ts) {
-    if (ts == null) return '';
-    final date = DateTime.fromMillisecondsSinceEpoch((ts as int) * 1000);
+  String _formatDate(DateTime? date) {
+    if (date == null) return '';
     const months = [
       'янв', 'фев', 'мар', 'апр', 'май', 'июн',
       'июл', 'авг', 'сен', 'окт', 'ноя', 'дек'

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../api/dtf_api.dart';
+import '../models/post.dart';
 import '../services/settings_service.dart';
 import '../theme.dart';
 import '../widgets/post_card.dart';
@@ -67,7 +68,8 @@ class _BookmarksList extends StatefulWidget {
 }
 
 class _BookmarksListState extends State<_BookmarksList> with AutomaticKeepAliveClientMixin {
-  List<dynamic> _items = [];
+  List<dynamic> _commentItems = [];
+  List<Post> _posts = [];
   bool _loading = true;
 
   // The post id a bookmarked comment belongs to. Tries the structured `entry`
@@ -99,16 +101,29 @@ class _BookmarksListState extends State<_BookmarksList> with AutomaticKeepAliveC
 
   Future<void> _load() async {
     final settings = context.read<SettingsService>();
-    final items = await DtfApi.getBookmarks(settings, type: widget.type);
-    if (!mounted) return;
-    setState(() { _items = items; _loading = false; });
+    if (widget.type == 'posts') {
+      final posts = await DtfApi.getPostBookmarks(settings);
+      if (!mounted) return;
+      setState(() {
+        _posts = posts;
+        _loading = false;
+      });
+    } else {
+      final comments = await DtfApi.getBookmarks(settings, type: widget.type);
+      if (!mounted) return;
+      setState(() {
+        _commentItems = comments;
+        _loading = false;
+      });
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     super.build(context);
     if (_loading) return const Center(child: CircularProgressIndicator());
-    if (_items.isEmpty) {
+    final itemCount = widget.type == 'posts' ? _posts.length : _commentItems.length;
+    if (itemCount == 0) {
       return RefreshIndicator(
         onRefresh: _load,
         child: ListView(
@@ -122,12 +137,12 @@ class _BookmarksListState extends State<_BookmarksList> with AutomaticKeepAliveC
     return RefreshIndicator(
       onRefresh: _load,
       child: ListView.builder(
-        itemCount: _items.length,
+        itemCount: itemCount,
         itemBuilder: (ctx, i) {
-          // Bookmark items wrap the actual content in `data` (with a type).
-          final raw = _items[i];
-          final data = raw['data'] ?? raw;
           if (widget.type == 'comments') {
+            // Comment bookmarks wrap the actual comment in `data`.
+            final raw = _commentItems[i];
+            final data = raw['data'] ?? raw;
             final postId = _commentPostId(data);
             final commentId = data['id'] as int?;
             return Padding(
@@ -155,16 +170,17 @@ class _BookmarksListState extends State<_BookmarksList> with AutomaticKeepAliveC
               ),
             );
           }
+          final post = _posts[i];
           return PostCard(
-            key: ValueKey(data['id']),
-            post: data,
+            key: ValueKey(post.id),
+            post: post,
             onTap: () => Navigator.push(
               ctx,
               MaterialPageRoute(
                 builder: (_) => PostScreen(
-                  postId: data['id'] as int,
-                  title: data['title'] ?? '',
-                  postData: data,
+                  postId: post.id,
+                  title: post.title,
+                  postData: post,
                 ),
               ),
             ),

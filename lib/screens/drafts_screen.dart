@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../api/dtf_api.dart';
+import '../models/post.dart';
 import '../services/settings_service.dart';
 import '../theme.dart';
 import '../widgets/post_card.dart';
@@ -14,7 +15,7 @@ class DraftsScreen extends StatefulWidget {
 }
 
 class _DraftsScreenState extends State<DraftsScreen> {
-  List<dynamic> _items = [];
+  List<Post> _items = [];
   bool _loading = true;
 
   @override
@@ -61,14 +62,14 @@ class _DraftsScreenState extends State<DraftsScreen> {
                     itemBuilder: (ctx, i) {
                       final post = _items[i];
                       return PostCard(
-                        key: ValueKey(post['id']),
+                        key: ValueKey(post.id),
                         post: post,
                         onTap: () => Navigator.push(
                           ctx,
                           MaterialPageRoute(
                             builder: (_) => PostScreen(
-                              postId: post['id'] as int,
-                              title: post['title'] ?? '',
+                              postId: post.id,
+                              title: post.title,
                               postData: post,
                             ),
                           ),

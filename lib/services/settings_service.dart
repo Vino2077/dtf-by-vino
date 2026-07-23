@@ -4,6 +4,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../models/block.dart';
+import '../models/post.dart';
+
 class AuthStorageException implements Exception {
   final String message;
   const AuthStorageException(this.message);
@@ -400,15 +403,16 @@ class SettingsService extends ChangeNotifier {
     await _prefs((p) => p.setString(_kViewedPosts, jsonEncode(viewedPostIds.toList())));
   }
 
-  bool isFiltered(dynamic post) {
+  bool isFiltered(Post post) {
     // Hide company-blog posts (black check-mark) when the user opted out.
-    if (hideCompanyPosts && post['author']?['isCompany'] == true) return true;
+    if (hideCompanyPosts && post.author?.rawJson['isCompany'] == true) {
+      return true;
+    }
     if (filterKeywords.isEmpty) return false;
-    final title = (post['title'] ?? '').toString().toLowerCase();
-    final blocks = post['blocks'] as List? ?? [];
-    final text = blocks
-        .where((b) => b['type'] == 'text')
-        .map((b) => (b['data']?['text'] ?? '').toString())
+    final title = post.title.toLowerCase();
+    final text = post.blocks
+        .whereType<TextBlock>()
+        .map((block) => block.html)
         .join(' ')
         .toLowerCase()
         .replaceAll(RegExp(r'<[^>]*>'), '');

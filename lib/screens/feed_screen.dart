@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../api/dtf_api.dart';
+import '../models/block.dart';
+import '../models/post.dart';
 import '../services/settings_service.dart';
 import '../theme.dart';
 import '../util/osnova_image.dart';
@@ -101,8 +103,8 @@ class FeedScreenState extends State<FeedScreen> with SingleTickerProviderStateMi
 /// Compact news digest shown at the top of "Популярное".
 /// Shows up to 4 editorial posts as title + subsite name + thumbnail cards.
 class _NewsDigestBlock extends StatelessWidget {
-  final List<dynamic> posts;
-  final void Function(dynamic post) onTap;
+  final List<Post> posts;
+  final void Function(Post post) onTap;
 
   const _NewsDigestBlock({required this.posts, required this.onTap});
 
@@ -126,18 +128,15 @@ class _NewsDigestBlock extends StatelessWidget {
 }
 
 class _NewsItem extends StatelessWidget {
-  final dynamic post;
+  final Post post;
   final VoidCallback onTap;
 
   const _NewsItem({required this.post, required this.onTap});
 
   String? get _imageUuid {
-    for (final block in post['blocks'] ?? []) {
-      if (block['type'] == 'media') {
-        final items = block['data']?['items'];
-        if (items is List && items.isNotEmpty) {
-          return items[0]?['image']?['data']?['uuid'] as String?;
-        }
+    for (final block in post.blocks) {
+      if (block is MediaBlock && block.items.isNotEmpty) {
+        return block.items.first.uuid;
       }
     }
     return null;
@@ -159,7 +158,7 @@ class _NewsItem extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    post['title'] ?? '',
+                    post.title,
                     maxLines: 3,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
@@ -171,7 +170,7 @@ class _NewsItem extends StatelessWidget {
                   ),
                   const SizedBox(height: 5),
                   Text(
-                    post['subsite']?['name'] ?? '',
+                    post.subsite?.name ?? '',
                     style: TextStyle(
                         color: AppColors.textSecondary, fontSize: 12),
                     maxLines: 1,
@@ -214,8 +213,8 @@ class FeedList extends StatefulWidget {
 }
 
 class FeedListState extends State<FeedList> with AutomaticKeepAliveClientMixin {
-  List<dynamic> _posts = [];
-  List<dynamic> _editorialPosts = []; // top-4 editorial, shown only in 'popular'
+  List<Post> _posts = [];
+  List<Post> _editorialPosts = []; // top-4 editorial, shown only in 'popular'
   bool _loading = true;
   bool _loadingMore = false;
   int? _lastId;
@@ -359,8 +358,8 @@ class FeedListState extends State<FeedList> with AutomaticKeepAliveClientMixin {
                           ctx,
                           MaterialPageRoute(
                             builder: (_) => PostScreen(
-                              postId: post['id'] as int,
-                              title: post['title'] ?? '',
+                              postId: post.id,
+                              title: post.title,
                               postData: post,
                             ),
                           ),
@@ -375,14 +374,14 @@ class FeedListState extends State<FeedList> with AutomaticKeepAliveClientMixin {
                     }
                     final post = _posts[postIdx];
                     return PostCard(
-                      key: ValueKey(post['id']),
+                      key: ValueKey(post.id),
                       post: post,
                       onTap: () => Navigator.push(
                         ctx,
                         MaterialPageRoute(
                           builder: (_) => PostScreen(
-                            postId: post['id'] as int,
-                            title: post['title'] ?? '',
+                            postId: post.id,
+                            title: post.title,
                             postData: post,
                           ),
                         ),
@@ -391,8 +390,8 @@ class FeedListState extends State<FeedList> with AutomaticKeepAliveClientMixin {
                         ctx,
                         MaterialPageRoute(
                           builder: (_) => PostScreen(
-                            postId: post['id'] as int,
-                            title: post['title'] ?? '',
+                            postId: post.id,
+                            title: post.title,
                             postData: post,
                             openToComments: true,
                           ),

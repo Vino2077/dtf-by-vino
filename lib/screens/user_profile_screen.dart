@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:provider/provider.dart';
 import '../api/dtf_api.dart';
+import '../models/post.dart';
 import '../services/settings_service.dart';
 import '../theme.dart';
 import '../util/osnova_image.dart';
@@ -36,7 +37,7 @@ class _UserProfileScreenState extends State<UserProfileScreen> with SingleTicker
   bool _isSubscribed = false;
 
   // Posts tab
-  List<dynamic> _posts = [];
+  List<Post> _posts = [];
   bool _loadingPosts = true;
   bool _loadingMorePosts = false;
   String _postSort = 'new'; // 'new' | 'popular'
@@ -392,14 +393,14 @@ class _UserProfileScreenState extends State<UserProfileScreen> with SingleTicker
                         }
                         final post = _posts[i];
                         return PostCard(
-                          key: ValueKey(post['id']),
+                          key: ValueKey(post.id),
                           post: post,
                           onTap: () => Navigator.push(
                             ctx,
                             MaterialPageRoute(
                               builder: (_) => PostScreen(
-                                postId: post['id'] as int,
-                                title: post['title'] ?? '',
+                                postId: post.id,
+                                title: post.title,
                                 postData: post,
                               ),
                             ),

@@ -1,13 +1,14 @@
 ﻿import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:http_parser/http_parser.dart';
+import '../models/post.dart';
 import '../services/settings_service.dart';
 import '../util/json_safe.dart';
 import 'api_config.dart';
 
 /// A page of timeline items with pagination cursors.
 class FeedPage {
-  final List<dynamic> items;
+  final List<Post> items;
   final int? lastId;
   // Opaque pagination cursor. For the "popular" feed it's a fractional score
   // (e.g. "12668.587636617"), so it must be kept verbatim as a string — parsing
@@ -134,16 +135,32 @@ class DtfApi {
   }
 
   // [includeNews] false в†’ skip the "news" block (matches the site's main feed).
-  static List<dynamic> _unwrapTimeline(dynamic result, {bool includeNews = true}) {
+  static Post? _toPost(dynamic value) {
+    if (value is! Map) return null;
+    try {
+      return Post.fromJson(asMap(value));
+    } on FormatException {
+      return null;
+    }
+  }
+
+  static List<Post> _toPosts(Iterable<dynamic> values) => values
+      .map(_toPost)
+      .whereType<Post>()
+      .toList(growable: false);
+
+  static List<Post> _unwrapTimeline(dynamic result, {bool includeNews = true}) {
     final items = asList(dig(result, ['items']) ?? (result is Map ? result['items'] : null));
-    return items.expand<dynamic>((i) {
-      if (i is! Map) return const [];
-      if (i['type'] == 'news') {
-        return includeNews ? asList(dig(i, ['data', 'news'])) : const [];
+    final posts = <dynamic>[];
+    for (final item in items) {
+      if (item is! Map) continue;
+      if (item['type'] == 'news') {
+        if (includeNews) posts.addAll(asList(dig(item, ['data', 'news'])));
+      } else if (item['data'] != null) {
+        posts.add(item['data']);
       }
-      final data = i['data'];
-      return data != null ? [data] : const [];
-    }).toList();
+    }
+    return _toPosts(posts);
   }
 
   static FeedPage _toFeedPage(dynamic result, {bool includeNews = true}) {
@@ -171,8 +188,12 @@ class DtfApi {
   }
 
   // --- Entry (single post) — /content?id= (NOT /entry/{id}) ---
-  static Future<dynamic> getEntry(int id, SettingsService settings) =>
-      _get('content?id=$id', settings);
+  static Future<Post?> getEntry(int id, SettingsService settings) async {
+    final result = await _get('content?id=$id', settings);
+    return _toPost(result is Map && result['entry'] != null
+        ? result['entry']
+        : result);
+  }
 
   // Editorial "Новости" feed — posts by the site editorial team.
   static Future<FeedPage> getEditorialFeed({
@@ -398,9 +419,11 @@ class DtfApi {
   }
 
   // --- Search ---
-  static Future<List<dynamic>> searchEntries(String query, SettingsService settings) async {
+  static Future<List<Post>> searchEntries(String query, SettingsService settings) async {
     final result = await _get('search?query=${Uri.encodeComponent(query)}&section=entries&count=20', settings);
-    return asList(dig(result, ['contents'])).map((c) => (c is Map ? c['data'] : null) ?? c).toList();
+    final values = asList(dig(result, ['contents']))
+        .map((item) => (item is Map ? item['data'] : null) ?? item);
+    return _toPosts(values);
   }
 
   // --- Discovery (search landing) ---
@@ -558,11 +581,22 @@ class DtfApi {
     return asList(dig(result, ['items']));
   }
 
+  static Future<List<Post>> getPostBookmarks(
+    SettingsService settings, {
+    int offset = 0,
+  }) async {
+    final items = await getBookmarks(settings, type: 'posts', offset: offset);
+    return _toPosts(items.map((item) {
+      if (item is! Map) return null;
+      return item['data'] ?? item;
+    }));
+  }
+
   // --- Drafts ---
   // MUST be new/posts/drafts (token-gated). The old timeline?pageName=drafts
   // returned 200 even WITHOUT a token — DTF ignores that pageName and serves
   // the public feed, so users saw random strangers' posts as "their drafts".
-  static Future<List<dynamic>> getDrafts(SettingsService settings) async {
+  static Future<List<Post>> getDrafts(SettingsService settings) async {
     if (!settings.isLoggedIn) return [];
     return _unwrapTimeline(
         await _get('new/posts/drafts?offset=0&limit=30&markdown=false', settings));

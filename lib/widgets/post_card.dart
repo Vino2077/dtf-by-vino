@@ -1,9 +1,11 @@
-import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../api/dtf_api.dart';
+import '../models/block.dart';
+import '../models/post.dart';
+import '../models/reaction.dart';
 import '../services/settings_service.dart';
 import '../theme.dart';
 import '../util/osnova_image.dart';
@@ -14,7 +16,7 @@ import 'reactions.dart';
 import 'media_view.dart';
 
 class PostCard extends StatefulWidget {
-  final dynamic post;
+  final Post post;
   final VoidCallback? onTap;
   final VoidCallback? onTapComments;
 
@@ -27,53 +29,66 @@ class PostCard extends StatefulWidget {
 class _PostCardState extends State<PostCard> {
   bool _collapsed = false;
   late bool _isFavorited;
+  late PostReactions _reactions;
   late String _cachedPreviewText;
-  late dynamic _cachedPreviewMedia;
+  late Map<String, dynamic>? _cachedPreviewMedia;
 
   // Popular comment shown under posts with 30+ reactions (like the official app).
   static const _popularCommentThreshold = 30;
+  static final _topCommentCache = <int, dynamic>{};
   dynamic _topComment;
   bool _topCommentRequested = false;
 
   @override
   void initState() {
     super.initState();
-    _isFavorited = widget.post['isFavorited'] == true;
+    _isFavorited = widget.post.isFavorited;
+    _reactions = widget.post.reactions;
     _cachedPreviewText = _previewText();
     _cachedPreviewMedia = _previewMedia();
     final settings = context.read<SettingsService>();
-    final postId = widget.post['id'] as int?;
-    if (postId != null &&
-        settings.autoCollapseViewed &&
-        settings.viewedPostIds.contains(postId)) {
+    if (settings.autoCollapseViewed &&
+        settings.viewedPostIds.contains(widget.post.id)) {
       _collapsed = true;
     }
     _maybeLoadTopComment();
   }
 
+  @override
+  void didUpdateWidget(covariant PostCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!identical(oldWidget.post, widget.post)) {
+      _isFavorited = widget.post.isFavorited;
+      _reactions = widget.post.reactions;
+      _cachedPreviewText = _previewText();
+      _cachedPreviewMedia = _previewMedia();
+    }
+    if (oldWidget.post.id != widget.post.id) {
+      _topComment = null;
+      _topCommentRequested = false;
+      _maybeLoadTopComment();
+    }
+  }
+
   Future<void> _maybeLoadTopComment() async {
     if (_topCommentRequested) return;
     final post = widget.post;
-    final postId = post['id'] as int?;
-    final reactionCount = (post['counters']?['reactions'] as int?) ?? 0;
-    final commentCount = (post['counters']?['comments'] as int?) ?? 0;
-    // Cached from a previous build of the same post map (feed keeps it alive).
-    if (post['_topComment'] != null) {
-      _topComment = post['_topComment'];
+    final cached = _topCommentCache[post.id];
+    if (cached != null) {
+      _topComment = cached;
       _topCommentRequested = true;
       return;
     }
-    if (postId == null ||
-        reactionCount < _popularCommentThreshold ||
-        commentCount == 0) {
+    if (post.counters.reactions < _popularCommentThreshold ||
+        post.counters.comments == 0) {
       return;
     }
     _topCommentRequested = true;
     final settings = context.read<SettingsService>();
-    final c = await DtfApi.getTopComment(postId, settings);
-    if (!mounted || c == null) return;
-    post['_topComment'] = c; // cache on the post map
-    setState(() => _topComment = c);
+    final comment = await DtfApi.getTopComment(post.id, settings);
+    if (!mounted || comment == null) return;
+    _topCommentCache[post.id] = comment;
+    setState(() => _topComment = comment);
   }
 
   Future<void> _toggleBookmark() async {
@@ -83,8 +98,7 @@ class _PostCardState extends State<PostCard> {
           .showSnackBar(const SnackBar(content: Text('Войди в аккаунт')));
       return;
     }
-    final postId = widget.post['id'] as int?;
-    if (postId == null) return;
+    final postId = widget.post.id;
     final newState = !_isFavorited;
     setState(() => _isFavorited = newState);
     final ok = await DtfApi.toggleFavorite(postId, 1, newState, settings);
@@ -99,16 +113,12 @@ class _PostCardState extends State<PostCard> {
           .showSnackBar(const SnackBar(content: Text('Войди в аккаунт')));
       return;
     }
-    final postId = widget.post['id'] as int?;
-    if (postId == null) return;
-    final reactions =
-        (widget.post['reactions'] as Map?) ?? {'counters': [], 'reactionId': 0};
-    widget.post['reactions'] = reactions;
-    final snapshot = jsonEncode(reactions);
-    final before = (reactions['reactionId'] as int?) ?? 0;
-    final now = applyReactionToggle(reactions, reactionId);
-    setState(() {});
-    final added = now != 0 && now != before;
+    final postId = widget.post.id;
+    final snapshot = _reactions;
+    final before = snapshot.selectedId;
+    final updated = snapshot.toggle(reactionId);
+    setState(() => _reactions = updated);
+    final added = updated.selectedId != 0 && updated.selectedId != before;
     if (added) settings.recordReactionUse(reactionId);
     showReactionToast(context, reactionId, added: added);
 
@@ -116,41 +126,34 @@ class _PostCardState extends State<PostCard> {
         id: postId, isComment: false, reactionId: reactionId, settings: settings);
     if (!mounted) return;
     if (result['ok'] != true) {
-      widget.post['reactions'] = jsonDecode(snapshot);
-      setState(() {});
+      setState(() => _reactions = snapshot);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Реакция: ${result['error'] ?? 'ошибка'}')),
       );
     }
   }
 
-  dynamic _previewMedia() {
-    for (final block in widget.post['blocks'] ?? []) {
-      if (block['type'] == 'media') {
-        final items = block['data']?['items'];
-        if (items != null && items.isNotEmpty) {
-          final image = items[0]['image'];
-          if (image != null && image['data']?['uuid'] != null) return image;
-        }
+  Map<String, dynamic>? _previewMedia() {
+    for (final block in widget.post.blocks) {
+      if (block is MediaBlock && block.items.isNotEmpty) {
+        final raw = block.items.first.raw;
+        if (raw is Map) return Map<String, dynamic>.from(raw);
       }
     }
     return null;
   }
 
   String _previewText() {
-    for (final block in widget.post['blocks'] ?? []) {
-      if (block['type'] == 'text') {
-        return (block['data']?['text'] ?? '')
-            .replaceAll(RegExp(r'<[^>]*>'), '');
+    for (final block in widget.post.blocks) {
+      if (block is TextBlock) {
+        return block.html.replaceAll(RegExp(r'<[^>]*>'), '');
       }
     }
     return '';
   }
 
-  String _timeAgo(dynamic timestamp) {
-    if (timestamp == null) return '';
-    final date =
-        DateTime.fromMillisecondsSinceEpoch((timestamp as int) * 1000);
+  String _timeAgo(DateTime? date) {
+    if (date == null) return '';
     final diff = DateTime.now().difference(date);
     if (diff.inMinutes < 60) return '${diff.inMinutes}м';
     if (diff.inHours < 24) return '${diff.inHours}ч';
@@ -162,25 +165,20 @@ class _PostCardState extends State<PostCard> {
   Widget build(BuildContext context) {
     final accent = Theme.of(context).colorScheme.primary;
     final post = widget.post;
-    final author = post['author'];
-    final subsite = post['subsite'];
-    final counters = post['counters'];
-    final postId = post['id'] as int?;
-    final authorId = author?['id'] as int?;
+    final author = post.author;
+    final subsite = post.subsite;
+    final counters = post.counters;
+    final postId = post.id;
+    final authorId = author?.id;
 
-    final isViewed = postId != null &&
-        context.select<SettingsService, bool>(
-            (s) => s.viewedPostIds.contains(postId));
+    final isViewed = context.select<SettingsService, bool>(
+        (settings) => settings.viewedPostIds.contains(postId));
     final userNote = context.select<SettingsService, String?>(
         (s) => authorId != null ? s.userNotes[authorId] : null);
 
-    final myReaction = (post['reactions']?['reactionId'] as int?) ?? 0;
-    final reactions =
-        (post['reactions']?['counters'] as List? ?? [])
-            .where((r) => (r['count'] ?? 0) > 0)
-            .toList()
-          ..sort((a, b) =>
-              (b['count'] as int).compareTo(a['count'] as int));
+    final myReaction = _reactions.selectedId;
+    final reactions = _reactions.counters.where((item) => item.count > 0).toList()
+      ..sort((a, b) => b.count.compareTo(a.count));
 
     final previewText = _cachedPreviewText;
     final previewMedia = _cachedPreviewMedia;
@@ -198,9 +196,9 @@ class _PostCardState extends State<PostCard> {
               child: Row(
                 children: [
                   Avatar.fromData(
-                    author?['avatar'],
+                    author?.avatar,
                     size: 36,
-                    onTap: () => openUserProfile(context, author),
+                    onTap: () => openUserProfile(context, author?.rawJson),
                   ),
                   const SizedBox(width: 10),
                   Expanded(
@@ -210,9 +208,9 @@ class _PostCardState extends State<PostCard> {
                         Row(children: [
                           Flexible(
                             child: GestureDetector(
-                              onTap: () => openUserProfile(context, author),
+                              onTap: () => openUserProfile(context, author?.rawJson),
                               child: Text(
-                                author?['name'] ?? '',
+                                author?.name ?? '',
                                 style: TextStyle(
                                   color: isViewed
                                       ? AppColors.textMuted
@@ -224,7 +222,7 @@ class _PostCardState extends State<PostCard> {
                               ),
                             ),
                           ),
-                          AuthorBadge(author: author, size: 13),
+                          AuthorBadge(author: author?.rawJson, size: 13),
                           if (userNote != null) ...[
                             const SizedBox(width: 6),
                             Container(
@@ -241,13 +239,13 @@ class _PostCardState extends State<PostCard> {
                           ],
                         ]),
                         Row(children: [
-                          Text(subsite?['name'] ?? '',
+                          Text(subsite?.name ?? '',
                               style: TextStyle(
                                   color: AppColors.textMuted, fontSize: 12)),
                           Text('  ·  ',
                               style: TextStyle(
                                   color: AppColors.textMuted, fontSize: 12)),
-                          Text(_timeAgo(post['date']),
+                          Text(_timeAgo(post.date),
                               style: TextStyle(
                                   color: AppColors.textMuted, fontSize: 12)),
                         ]),
@@ -291,8 +289,8 @@ class _PostCardState extends State<PostCard> {
                           height: 1.3,
                         ),
                         children: [
-                          TextSpan(text: post['title'] ?? ''),
-                          if (post['isEditorial'] == true) ...[
+                          TextSpan(text: post.title),
+                          if (post.isEditorial) ...[
                             const WidgetSpan(
                                 child: SizedBox(width: 5)),
                             WidgetSpan(
@@ -326,12 +324,12 @@ class _PostCardState extends State<PostCard> {
                       runSpacing: 6,
                       children: [
                         ...reactions.take(8).map((r) {
-                          final mine = r['id'] == myReaction;
+                          final mine = r.id == myReaction;
                           return BurstTap(
-                            onTap: () => _react(r['id'] as int),
+                            onTap: () => _react(r.id),
                             onLongPress: () => showReactionUsers(
                                 context: context,
-                                id: postId ?? 0,
+                                id: postId,
                                 isComment: false,
                                 settings: context.read<SettingsService>()),
                             burstColor: accent,
@@ -357,11 +355,11 @@ class _PostCardState extends State<PostCard> {
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
                                     ReactionIcon(
-                                        id: r['id'] as int,
+                                        id: r.id,
                                         size: 16,
                                         animated: false),
                                     const SizedBox(width: 4),
-                                    Text('${r['count']}',
+                                    Text('${r.count}',
                                         style: const TextStyle(
                                             fontSize: 13)),
                                   ]),
@@ -381,7 +379,7 @@ class _PostCardState extends State<PostCard> {
                               size: 15,
                               color: AppColors.textMuted),
                           const SizedBox(width: 4),
-                          Text('${counters?['comments'] ?? 0}',
+                          Text('${counters.comments}',
                               style: TextStyle(
                                   color: AppColors.textMuted,
                                   fontSize: 13)),
@@ -403,7 +401,7 @@ class _PostCardState extends State<PostCard> {
                           ),
                           const SizedBox(width: 4),
                           Text(
-                              '${counters?['favorites'] ?? 0}',
+                              '${counters.favorites}',
                               style: TextStyle(
                                   color: _isFavorited
                                       ? accent
@@ -419,8 +417,8 @@ class _PostCardState extends State<PostCard> {
                             size: 16, color: AppColors.textMuted),
                       ),
                       const Spacer(),
-                      if ((counters?['hits'] ?? 0) > 0) ...[
-                        Text(_fmtCount(counters?['hits']),
+                      if (counters.hits > 0) ...[
+                        Text(_fmtCount(counters.hits),
                             style: TextStyle(
                                 color: AppColors.textMuted, fontSize: 13)),
                         const SizedBox(width: 4),
@@ -443,7 +441,7 @@ class _PostCardState extends State<PostCard> {
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 6, 16, 10),
                 child: Text(
-                  post['title'] ?? '',
+                  post.title,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
@@ -458,8 +456,8 @@ class _PostCardState extends State<PostCard> {
   }
 
   void _sharePost(BuildContext context) {
-    final postId = widget.post['id'];
-    final url = (widget.post['url'] as String?) ?? 'https://dtf.ru/$postId';
+    final postId = widget.post.id;
+    final url = widget.post.url ?? 'https://dtf.ru/$postId';
     Clipboard.setData(ClipboardData(text: url));
     ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Ссылка скопирована')));
@@ -467,9 +465,9 @@ class _PostCardState extends State<PostCard> {
 
   void _showPostMenu(BuildContext context) {
     final settings = context.read<SettingsService>();
-    final author = widget.post['author'];
-    final authorId = author?['id'] as int?;
-    final authorName = author?['name'] ?? '';
+    final author = widget.post.author;
+    final authorId = author?.id;
+    final authorName = author?.name ?? '';
     final currentNote =
         authorId != null ? settings.userNotes[authorId] : null;
 
