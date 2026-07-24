@@ -49,8 +49,16 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   Future<void> _logout() async {
-    await context.read<SettingsService>().clearToken();
-    setState(() => _user = null);
+    try {
+      await context.read<SettingsService>().clearToken();
+      if (mounted) setState(() => _user = null);
+    } on AuthStorageException catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(error.message)),
+        );
+      }
+    }
   }
 
   void _changeBadge() {

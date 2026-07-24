@@ -52,7 +52,14 @@ class _LoginScreenState extends State<LoginScreen> {
       return;
     }
 
-    await context.read<SettingsService>().saveToken(token);
+    try {
+      await context.read<SettingsService>().saveToken(token);
+    } on AuthStorageException catch (error) {
+      if (mounted) {
+        setState(() { _loading = false; _error = error.message; });
+      }
+      return;
+    }
     if (mounted) Navigator.pop(context, true);
   }
 
@@ -108,8 +115,14 @@ class _LoginScreenState extends State<LoginScreen> {
                 final valid = await DtfApi.validateToken(tok);
                 if (!mounted) return;
                 if (valid) {
-                  await context.read<SettingsService>().saveToken(tok);
-                  if (mounted) Navigator.pop(context, true);
+                  try {
+                    await context.read<SettingsService>().saveToken(tok);
+                    if (mounted) Navigator.pop(context, true);
+                  } on AuthStorageException catch (error) {
+                    if (mounted) {
+                      setState(() { _loading = false; _error = error.message; });
+                    }
+                  }
                 } else {
                   setState(() { _loading = false; _error = 'Токен не подошёл'; });
                 }

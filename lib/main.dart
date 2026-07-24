@@ -80,6 +80,16 @@ class _MainScreenState extends State<MainScreen> {
     _loadCurrentUser();
     _pollTimer = Timer.periodic(
         const Duration(seconds: 60), (_) => _pollNotifications());
+
+    final storageError = context.read<SettingsService>().authStorageError;
+    if (storageError != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(storageError)),
+        );
+      });
+    }
   }
 
   Future<void> _loadCurrentUser() async {
