@@ -100,15 +100,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        const Icon(Icons.account_circle_outlined,
+                        Icon(Icons.account_circle_outlined,
                             color: AppColors.textMuted, size: 72),
                         const SizedBox(height: 16),
-                        const Text('Ты не вошёл в аккаунт',
+                        Text('Ты не вошёл в аккаунт',
                             style: TextStyle(
                                 color: AppColors.textPrimary,
                                 fontSize: 18)),
                         const SizedBox(height: 8),
-                        const Text(
+                        Text(
                           'Войди, чтобы видеть свою ленту, уведомления и профиль',
                           textAlign: TextAlign.center,
                           style: TextStyle(
@@ -134,9 +134,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 ),
               ),
               ListTile(
-                leading: const Icon(Icons.settings_outlined,
+                leading: Icon(Icons.settings_outlined,
                     color: AppColors.textMuted),
-                title: const Text('Настройки приложения',
+                title: Text('Настройки приложения',
                     style: TextStyle(color: AppColors.textPrimary)),
                 onTap: () => Navigator.push(
                   context,
@@ -199,7 +199,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                             Flexible(
                               child: Text(
                                 _user?['name'] ?? '',
-                                style: const TextStyle(
+                                style: TextStyle(
                                     color: AppColors.textPrimary,
                                     fontSize: 18,
                                     fontWeight: FontWeight.bold),
@@ -221,12 +221,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
                               ),
                             ],
                             const Spacer(),
-                            const Icon(Icons.chevron_right,
+                            Icon(Icons.chevron_right,
                                 color: AppColors.textMuted, size: 20),
                           ]),
                           if (_user?['nickname'] != null)
                             Text('@${_user['nickname']}',
-                                style: const TextStyle(
+                                style: TextStyle(
                                     color: AppColors.textMuted,
                                     fontSize: 13)),
                           const SizedBox(height: 6),
@@ -256,9 +256,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         leading: Icon(item[0] as IconData,
                             color: AppColors.textSecondary, size: 22),
                         title: Text(item[1] as String,
-                            style: const TextStyle(
+                            style: TextStyle(
                                 color: AppColors.textPrimary)),
-                        trailing: const Icon(Icons.chevron_right,
+                        trailing: Icon(Icons.chevron_right,
                             color: AppColors.textMuted, size: 20),
                         onTap: item[2] as VoidCallback?,
                       )),
@@ -275,11 +275,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 child: Column(
                 children: [
                   ListTile(
-                    leading: const Icon(Icons.settings_outlined,
+                    leading: Icon(Icons.settings_outlined,
                         color: AppColors.textSecondary, size: 22),
-                    title: const Text('Настройки приложения',
+                    title: Text('Настройки приложения',
                         style: TextStyle(color: AppColors.textPrimary)),
-                    trailing: const Icon(Icons.chevron_right,
+                    trailing: Icon(Icons.chevron_right,
                         color: AppColors.textMuted, size: 20),
                     onTap: () => Navigator.push(
                       context,
@@ -339,12 +339,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(value,
-            style: const TextStyle(
+            style: TextStyle(
                 color: AppColors.textPrimary,
                 fontSize: 15,
                 fontWeight: FontWeight.bold)),
         Text(label,
-            style: const TextStyle(
+            style: TextStyle(
                 color: AppColors.textMuted, fontSize: 12)),
       ],
     );

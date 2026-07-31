@@ -66,7 +66,7 @@ class _AppDrawerState extends State<AppDrawer> {
     return Drawer(
       backgroundColor: AppColors.bgDeep,
       width: MediaQuery.of(context).size.width * 0.82,
-      shape: const RoundedRectangleBorder(),
+      shape: RoundedRectangleBorder(),
       child: Column(
         children: [
           // Search field → jumps to the Search tab.
@@ -79,13 +79,13 @@ class _AppDrawerState extends State<AppDrawer> {
               },
               child: Container(
                 height: 44,
-                padding: const EdgeInsets.symmetric(horizontal: 14),
+                padding: EdgeInsets.symmetric(horizontal: 14),
                 decoration: BoxDecoration(
                   color: AppColors.bgElevated,
                   borderRadius: BorderRadius.circular(AppRadius.card),
                 ),
                 child: Row(
-                  children: const [
+                  children: [
                     Icon(Icons.search, color: AppColors.textMuted, size: 20),
                     SizedBox(width: 10),
                     Text('Поиск по DTF',
@@ -113,7 +113,7 @@ class _AppDrawerState extends State<AppDrawer> {
             onTap: () => _push(const SettingsScreen()),
           ),
           const SizedBox(height: 6),
-          const Padding(
+          Padding(
             padding: EdgeInsets.fromLTRB(16, 8, 16, 8),
             child: Align(
               alignment: Alignment.centerLeft,
@@ -146,7 +146,7 @@ class _AppDrawerState extends State<AppDrawer> {
       return const Center(child: CircularProgressIndicator());
     }
     if (_subs.isEmpty) {
-      return const Center(
+      return Center(
         child: Padding(
           padding: EdgeInsets.symmetric(horizontal: 24),
           child: Text(
@@ -187,7 +187,7 @@ class _DrawerAction extends StatelessWidget {
             Icon(icon, color: accent, size: 24),
             const SizedBox(width: 16),
             Text(label,
-                style: const TextStyle(
+                style: TextStyle(
                     color: AppColors.textPrimary,
                     fontSize: 16,
                     fontWeight: FontWeight.w500)),
@@ -224,7 +224,7 @@ class _SubTile extends StatelessWidget {
                 subsite['name'] ?? '',
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
+                style: TextStyle(
                     color: AppColors.textPrimary,
                     fontSize: 15,
                     fontWeight: FontWeight.w500),

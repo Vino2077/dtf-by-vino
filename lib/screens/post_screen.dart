@@ -359,7 +359,7 @@ class _PostScreenState extends State<PostScreen> {
     final settings = context.read<SettingsService>();
     if (!settings.isLoggedIn) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Войди в аккаунт, чтобы комментировать'),
+        SnackBar(content: Text('Войди в аккаунт, чтобы комментировать'),
             backgroundColor: AppColors.bgElevated),
       );
       return;
@@ -385,7 +385,7 @@ class _PostScreenState extends State<PostScreen> {
       await _fetchComments();
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Комментарий добавлен'), backgroundColor: AppColors.bgElevated),
+        SnackBar(content: Text('Комментарий добавлен'), backgroundColor: AppColors.bgElevated),
       );
     } else {
       setState(() => _sending = false);
@@ -411,7 +411,7 @@ class _PostScreenState extends State<PostScreen> {
         _attachments.add(media);
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Не удалось прикрепить GIF'),
+          SnackBar(content: Text('Не удалось прикрепить GIF'),
               backgroundColor: AppColors.bgElevated),
         );
       }
@@ -422,7 +422,7 @@ class _PostScreenState extends State<PostScreen> {
     final settings = context.read<SettingsService>();
     if (!settings.isLoggedIn) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Войди в аккаунт'), backgroundColor: AppColors.bgElevated),
+        SnackBar(content: Text('Войди в аккаунт'), backgroundColor: AppColors.bgElevated),
       );
       return;
     }
@@ -438,7 +438,7 @@ class _PostScreenState extends State<PostScreen> {
         _attachments.add(media);
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Не удалось загрузить файл'),
+          SnackBar(content: Text('Не удалось загрузить файл'),
               backgroundColor: AppColors.bgElevated),
         );
       }
@@ -449,7 +449,7 @@ class _PostScreenState extends State<PostScreen> {
     final settings = context.read<SettingsService>();
     if (!settings.isLoggedIn) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Войди в аккаунт'), backgroundColor: AppColors.bgElevated),
+        SnackBar(content: Text('Войди в аккаунт'), backgroundColor: AppColors.bgElevated),
       );
       return;
     }
@@ -480,7 +480,7 @@ class _PostScreenState extends State<PostScreen> {
     final settings = context.read<SettingsService>();
     if (!settings.isLoggedIn) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Войди в аккаунт'), backgroundColor: AppColors.bgElevated),
+        SnackBar(content: Text('Войди в аккаунт'), backgroundColor: AppColors.bgElevated),
       );
       return;
     }
@@ -509,8 +509,8 @@ class _PostScreenState extends State<PostScreen> {
           children: [
             const SizedBox(height: 12),
             ListTile(
-              leading: const Icon(Icons.emoji_emotions_outlined, color: Colors.white),
-              title: const Text('Реакции', style: TextStyle(color: Colors.white)),
+              leading: Icon(Icons.emoji_emotions_outlined, color: AppColors.textPrimary),
+              title: Text('Реакции', style: TextStyle(color: AppColors.textPrimary)),
               subtitle: const Text('Кто поставил реакцию на пост',
                   style: TextStyle(color: Colors.grey, fontSize: 12)),
               onTap: () {
@@ -520,8 +520,8 @@ class _PostScreenState extends State<PostScreen> {
               },
             ),
             ListTile(
-              leading: const Icon(Icons.add_reaction_outlined, color: Colors.white),
-              title: const Text('Поставить реакцию', style: TextStyle(color: Colors.white)),
+              leading: Icon(Icons.add_reaction_outlined, color: AppColors.textPrimary),
+              title: Text('Поставить реакцию', style: TextStyle(color: AppColors.textPrimary)),
               onTap: () {
                 Navigator.pop(ctx);
                 showReactionPicker(context, _reactToPost);
@@ -576,7 +576,7 @@ class _PostScreenState extends State<PostScreen> {
             curve: Curves.easeOut,
           ),
           backgroundColor: AppColors.bgElevated,
-          child: const Icon(Icons.keyboard_arrow_up,
+          child: Icon(Icons.keyboard_arrow_up,
               color: AppColors.textPrimary),
         ),
       ),
@@ -617,12 +617,12 @@ class _PostScreenState extends State<PostScreen> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.cloud_off, color: AppColors.textMuted, size: 56),
+            Icon(Icons.cloud_off, color: AppColors.textMuted, size: 56),
             const SizedBox(height: 16),
-            const Text('Не удалось загрузить пост',
+            Text('Не удалось загрузить пост',
                 style: TextStyle(color: AppColors.textPrimary, fontSize: 16)),
             const SizedBox(height: 8),
-            const Text('Проверь соединение или попробуй ещё раз',
+            Text('Проверь соединение или попробуй ещё раз',
                 textAlign: TextAlign.center,
                 style: TextStyle(color: AppColors.textSecondary, fontSize: 13)),
             const SizedBox(height: 20),
@@ -659,14 +659,14 @@ class _PostScreenState extends State<PostScreen> {
               onTap: () => openUserProfile(context, author),
               child: Row(children: [
                 Text(author?['name'] ?? '',
-                    style: const TextStyle(
+                    style: TextStyle(
                         color: AppColors.textPrimary, fontWeight: FontWeight.bold, fontSize: 15)),
                 AuthorBadge(author: author, size: 14),
               ]),
             ),
             Text(
               _formatDate(date),
-              style: const TextStyle(color: AppColors.textMuted, fontSize: 12),
+              style: TextStyle(color: AppColors.textMuted, fontSize: 12),
             ),
           ]),
         ),
@@ -717,7 +717,7 @@ class _PostScreenState extends State<PostScreen> {
                   ReactionIcon(id: r['id'] as int, size: 18),
                   const SizedBox(width: 6),
                   Text('${r['count']}',
-                      style: const TextStyle(
+                      style: TextStyle(
                           color: AppColors.textPrimary,
                           fontSize: 14,
                           fontWeight: FontWeight.bold)),
@@ -737,20 +737,20 @@ class _PostScreenState extends State<PostScreen> {
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
       child: Row(children: [
-        const Icon(Icons.remove_red_eye_outlined, size: 15, color: AppColors.textMuted),
+        Icon(Icons.remove_red_eye_outlined, size: 15, color: AppColors.textMuted),
         const SizedBox(width: 4),
         Text('${counters?['hits'] ?? 0}',
-            style: const TextStyle(color: AppColors.textMuted, fontSize: 13)),
+            style: TextStyle(color: AppColors.textMuted, fontSize: 13)),
         const SizedBox(width: 16),
-        const Icon(Icons.bookmark_border, size: 15, color: AppColors.textMuted),
+        Icon(Icons.bookmark_border, size: 15, color: AppColors.textMuted),
         const SizedBox(width: 4),
         Text('${counters?['favorites'] ?? 0}',
-            style: const TextStyle(color: AppColors.textMuted, fontSize: 13)),
+            style: TextStyle(color: AppColors.textMuted, fontSize: 13)),
         const SizedBox(width: 16),
-        const Icon(Icons.chat_bubble_outline, size: 15, color: AppColors.textMuted),
+        Icon(Icons.chat_bubble_outline, size: 15, color: AppColors.textMuted),
         const SizedBox(width: 4),
         Text('${counters?['comments'] ?? 0}',
-            style: const TextStyle(color: AppColors.textMuted, fontSize: 13)),
+            style: TextStyle(color: AppColors.textMuted, fontSize: 13)),
       ]),
     );
   }
@@ -764,7 +764,7 @@ class _PostScreenState extends State<PostScreen> {
         children: [
           Text.rich(
             TextSpan(
-              style: const TextStyle(
+              style: TextStyle(
                   color: AppColors.textPrimary,
                   fontSize: 22,
                   fontWeight: FontWeight.bold,
@@ -797,11 +797,11 @@ class _PostScreenState extends State<PostScreen> {
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
           child: Row(children: [
-            const Text('Комментарии',
+            Text('Комментарии',
                 style: TextStyle(color: AppColors.textPrimary, fontSize: 18, fontWeight: FontWeight.bold)),
             const SizedBox(width: 8),
             Text('(${_comments.length})',
-                style: const TextStyle(color: AppColors.textMuted, fontSize: 15)),
+                style: TextStyle(color: AppColors.textMuted, fontSize: 15)),
           ]),
         ),
         Padding(
@@ -827,7 +827,7 @@ class _PostScreenState extends State<PostScreen> {
     }
     if (_comments.isEmpty) {
       return [
-        const SliverToBoxAdapter(
+        SliverToBoxAdapter(
           child: Padding(
             padding: EdgeInsets.all(24),
             child: Center(child: Text('Комментариев нет', style: TextStyle(color: AppColors.textMuted))),
@@ -948,7 +948,7 @@ class _PostScreenState extends State<PostScreen> {
                   ),
                   GestureDetector(
                     onTap: _cancelReply,
-                    child: const Icon(Icons.close,
+                    child: Icon(Icons.close,
                         size: 16, color: AppColors.textMuted),
                   ),
                 ]),
@@ -1024,7 +1024,7 @@ class _PostScreenState extends State<PostScreen> {
                 IconButton(
                   padding: EdgeInsets.zero,
                   constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
-                  icon: const Icon(Icons.image_outlined, color: AppColors.textMuted),
+                  icon: Icon(Icons.image_outlined, color: AppColors.textMuted),
                   onPressed: _attachFromGallery,
                 ),
                 const SizedBox(width: 4),
@@ -1032,13 +1032,13 @@ class _PostScreenState extends State<PostScreen> {
                   child: TextField(
                     controller: _commentController,
                     focusNode: _commentFocus,
-                    style: const TextStyle(color: AppColors.textPrimary, fontSize: 14),
+                    style: TextStyle(color: AppColors.textPrimary, fontSize: 14),
                     minLines: 1,
                     maxLines: 5,
                     textCapitalization: TextCapitalization.sentences,
                     decoration: InputDecoration(
                       hintText: 'Комментарий...',
-                      hintStyle: const TextStyle(color: AppColors.textMuted),
+                      hintStyle: TextStyle(color: AppColors.textMuted),
                       filled: true,
                       fillColor: AppColors.bgElevated,
                       isDense: true,

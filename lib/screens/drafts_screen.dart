@@ -37,10 +37,10 @@ class _DraftsScreenState extends State<DraftsScreen> {
       appBar: AppBar(
         backgroundColor: AppColors.bgCard,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Colors.white),
+          icon: Icon(Icons.arrow_back, color: AppColors.textPrimary),
           onPressed: () => Navigator.pop(context),
         ),
-        title: const Text('Черновики', style: TextStyle(color: Colors.white)),
+        title: Text('Черновики', style: TextStyle(color: AppColors.textPrimary)),
       ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())

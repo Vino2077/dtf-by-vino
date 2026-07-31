@@ -36,13 +36,19 @@ class DtfApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final light = context.select<SettingsService, bool>((s) => s.lightTheme);
     final accentColor = context.select<SettingsService, Color>((s) => s.accentColor);
+    // Swap the active palette before the theme (and any AppColors lookup) is built.
+    applyPalette(light: light);
     return MaterialApp(
       title: 'DTF by Vino',
       navigatorKey: navigatorKey,
       debugShowCheckedModeBanner: false,
       theme: AppTheme.build(accentColor),
-      home: const MainScreen(),
+      // Keyed by theme so switching palettes rebuilds the whole tree — the
+      // AppColors getters are read at build time and wouldn't otherwise
+      // refresh in subtrees that aren't listening to the theme.
+      home: MainScreen(key: ValueKey(light)),
       builder: (context, child) =>
           InactivityDetector(child: child ?? const SizedBox()),
     );
@@ -167,8 +173,9 @@ class _BottomNav extends StatelessWidget {
     final bottomPad = MediaQuery.of(context).padding.bottom;
 
     return Container(
-      decoration: const BoxDecoration(
-        color: AppColors.bgDeep,
+      decoration: BoxDecoration(
+        // Figma: light nav bar sits on #EAEAEA, dark one blends into the bg.
+        color: AppColors.isLight ? AppColors.bgCard : AppColors.bgDeep,
         border: Border(
             top: BorderSide(color: AppColors.divider, width: 1)),
       ),

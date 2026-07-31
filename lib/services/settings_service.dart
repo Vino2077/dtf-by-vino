@@ -20,8 +20,11 @@ class SettingsService extends ChangeNotifier {
   static const _kReactionUsage = 'reaction_usage';
   static const _kFavoriteSubsites = 'favorite_subsites';
   static const _kHideCompanyPosts = 'hide_company_posts';
+  static const _kLightTheme = 'light_theme';
 
-  static const _defaultAccent = 0xFF5B82F2; // DTF blue (redesign accent)
+  // Per-theme default accents (Figma). A user-picked accent overrides both.
+  static const _defaultAccent = 0xFF5B82F2;      // dark theme
+  static const _defaultAccentLight = 0xFF6580EC; // light theme
 
   bool showDeletedComments = true;
   bool autoCollapseViewed = false;
@@ -29,6 +32,8 @@ class SettingsService extends ChangeNotifier {
   bool blackTheme = false;
   // Hide posts from company blogs (the black "✓" verified-company mark).
   bool hideCompanyPosts = false;
+  // Light (white) theme instead of the default dark one.
+  bool lightTheme = false;
   List<String> filterKeywords = [];
   Map<int, String> userNotes = {};
   Set<int> viewedPostIds = {};
@@ -50,7 +55,14 @@ class SettingsService extends ChangeNotifier {
   double get bgBlur => _bgBlur;
   double get bgDim => _bgDim;
 
-  Color get accentColor => Color(_accentColor);
+  /// The accent in use. When the user hasn't picked one, each theme falls back
+  /// to its own Figma default (dark #5B82F2 / light #6580EC).
+  Color get accentColor {
+    if (_accentColor == _defaultAccent && lightTheme) {
+      return const Color(_defaultAccentLight);
+    }
+    return Color(_accentColor);
+  }
 
   String? get token => _token;
   bool get isLoggedIn => _token != null && _token!.isNotEmpty;
@@ -130,6 +142,7 @@ class SettingsService extends ChangeNotifier {
     _bgDim = prefs.getDouble(_kBgDim) ?? 0.45;
     blackTheme = prefs.getBool(_kBlackTheme) ?? false;
     hideCompanyPosts = prefs.getBool(_kHideCompanyPosts) ?? false;
+    lightTheme = prefs.getBool(_kLightTheme) ?? false;
   }
 
   Future<void> setBlackTheme(bool v) async {
@@ -140,6 +153,11 @@ class SettingsService extends ChangeNotifier {
   Future<void> setHideCompanyPosts(bool v) async {
     hideCompanyPosts = v;
     await _prefs((p) => p.setBool(_kHideCompanyPosts, v));
+  }
+
+  Future<void> setLightTheme(bool v) async {
+    lightTheme = v;
+    await _prefs((p) => p.setBool(_kLightTheme, v));
   }
 
   /// Records that [reactionId] was used, so the picker can surface the user's

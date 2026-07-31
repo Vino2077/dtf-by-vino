@@ -237,11 +237,11 @@ class _CommentWidgetState extends State<CommentWidget> {
                   ],
                   const SizedBox(width: 6),
                   Text(_timeAgo(c['date']),
-                      style: const TextStyle(
+                      style: TextStyle(
                           color: AppColors.textMuted, fontSize: 11)),
                   if (isEdited) ...[
                     const SizedBox(width: 4),
-                    const Text('✎',
+                    Text('✎',
                         style: TextStyle(
                             color: AppColors.textMuted, fontSize: 10)),
                   ],
@@ -280,7 +280,7 @@ class _CommentWidgetState extends State<CommentWidget> {
                 const SizedBox(width: 2),
                 GestureDetector(
                   onTap: () => _showMenu(context, author),
-                  child: const Icon(Icons.more_horiz,
+                  child: Icon(Icons.more_horiz,
                       color: AppColors.textMuted, size: 16),
                 ),
               ],
@@ -292,7 +292,7 @@ class _CommentWidgetState extends State<CommentWidget> {
               if (restoredText != null && restoredText.isNotEmpty)
                 LinkifiedText(
                   restoredText,
-                  style: const TextStyle(
+                  style: TextStyle(
                     color: AppColors.textPrimary,
                     fontSize: 14,
                     height: 1.4,
@@ -327,7 +327,7 @@ class _CommentWidgetState extends State<CommentWidget> {
                       : isHidden
                           ? '🔒 Скрыт'
                           : '🗑 Удалён автором',
-                  style: const TextStyle(
+                  style: TextStyle(
                       color: AppColors.textMuted,
                       fontSize: 13,
                       fontStyle: FontStyle.italic),
@@ -393,18 +393,18 @@ class _CommentWidgetState extends State<CommentWidget> {
 
               const SizedBox(height: 4),
               Row(children: [
-                const Icon(Icons.thumb_up_outlined,
+                Icon(Icons.thumb_up_outlined,
                     size: 12, color: AppColors.textMuted),
                 const SizedBox(width: 3),
                 Text('$counterLikes',
-                    style: const TextStyle(
+                    style: TextStyle(
                         color: AppColors.textMuted, fontSize: 11)),
                 if (editHistory != null) ...[
                   const SizedBox(width: 12),
                   GestureDetector(
                     onTap: () => _showEditHistory(context, editHistory),
                     child: Row(children: [
-                      const Icon(Icons.history,
+                      Icon(Icons.history,
                           size: 13, color: AppColors.textMuted),
                       const SizedBox(width: 3),
                       Text('изменён', style: TextStyle(
@@ -467,7 +467,7 @@ class _CommentWidgetState extends State<CommentWidget> {
                   color: AppColors.textMuted,
                   borderRadius: BorderRadius.circular(2)),
             ),
-            const Padding(
+            Padding(
               padding: EdgeInsets.symmetric(vertical: 12),
               child: Text('История изменений',
                   style: TextStyle(
@@ -503,13 +503,13 @@ class _CommentWidgetState extends State<CommentWidget> {
                       children: [
                         Row(children: [
                           Text(label,
-                              style: const TextStyle(
+                              style: TextStyle(
                                   color: AppColors.textSecondary,
                                   fontSize: 11,
                                   fontWeight: FontWeight.w600)),
                           const Spacer(),
                           Text(timeOf(v),
-                              style: const TextStyle(
+                              style: TextStyle(
                                   color: AppColors.textMuted, fontSize: 11)),
                         ]),
                         const SizedBox(height: 6),
@@ -517,7 +517,7 @@ class _CommentWidgetState extends State<CommentWidget> {
                           (v['text'] ?? '').toString().isEmpty
                               ? '(пустой текст)'
                               : v['text'].toString(),
-                          style: const TextStyle(
+                          style: TextStyle(
                               color: AppColors.textPrimary,
                               fontSize: 13,
                               height: 1.35),
@@ -547,14 +547,14 @@ class _CommentWidgetState extends State<CommentWidget> {
       context: context,
       builder: (dctx) => AlertDialog(
         backgroundColor: AppColors.bgCard,
-        title: const Text('Редактировать комментарий',
+        title: Text('Редактировать комментарий',
             style: TextStyle(color: AppColors.textPrimary, fontSize: 16)),
         content: TextField(
           controller: ctrl,
           autofocus: true,
           maxLines: null,
           minLines: 3,
-          style: const TextStyle(color: AppColors.textPrimary),
+          style: TextStyle(color: AppColors.textPrimary),
           decoration:
               const InputDecoration(hintText: 'Текст комментария...'),
         ),
@@ -634,9 +634,9 @@ class _CommentWidgetState extends State<CommentWidget> {
             const SizedBox(height: 12),
             if (canEdit)
               ListTile(
-                leading: const Icon(Icons.edit_outlined,
+                leading: Icon(Icons.edit_outlined,
                     color: AppColors.textPrimary),
-                title: const Text('Редактировать комментарий',
+                title: Text('Редактировать комментарий',
                     style: TextStyle(color: AppColors.textPrimary)),
                 onTap: () {
                   Navigator.pop(ctx);
@@ -644,9 +644,9 @@ class _CommentWidgetState extends State<CommentWidget> {
                 },
               ),
             ListTile(
-              leading: const Icon(Icons.add_reaction_outlined,
+              leading: Icon(Icons.add_reaction_outlined,
                   color: AppColors.textPrimary),
-              title: const Text('Поставить реакцию',
+              title: Text('Поставить реакцию',
                   style: TextStyle(color: AppColors.textPrimary)),
               onTap: () {
                 Navigator.pop(ctx);
@@ -654,9 +654,9 @@ class _CommentWidgetState extends State<CommentWidget> {
               },
             ),
             ListTile(
-              leading: const Icon(Icons.emoji_emotions_outlined,
+              leading: Icon(Icons.emoji_emotions_outlined,
                   color: AppColors.textPrimary),
-              title: const Text('Кто поставил реакцию',
+              title: Text('Кто поставил реакцию',
                   style: TextStyle(color: AppColors.textPrimary)),
               onTap: () {
                 Navigator.pop(ctx);
@@ -668,8 +668,8 @@ class _CommentWidgetState extends State<CommentWidget> {
               },
             ),
             ListTile(
-              leading: const Icon(Icons.link, color: AppColors.textPrimary),
-              title: const Text('Скопировать ссылку',
+              leading: Icon(Icons.link, color: AppColors.textPrimary),
+              title: Text('Скопировать ссылку',
                   style: TextStyle(color: AppColors.textPrimary)),
               onTap: () {
                 Navigator.pop(ctx);
@@ -681,16 +681,16 @@ class _CommentWidgetState extends State<CommentWidget> {
                   _isFavorited ? Icons.bookmark : Icons.bookmark_border,
                   color: AppColors.textPrimary),
               title: Text(_isFavorited ? 'Убрать из закладок' : 'В закладки',
-                  style: const TextStyle(color: AppColors.textPrimary)),
+                  style: TextStyle(color: AppColors.textPrimary)),
               onTap: () {
                 Navigator.pop(ctx);
                 _toggleBookmark();
               },
             ),
             ListTile(
-              leading: const Icon(Icons.content_copy_outlined,
+              leading: Icon(Icons.content_copy_outlined,
                   color: AppColors.textPrimary),
-              title: const Text('Копировать текст',
+              title: Text('Копировать текст',
                   style: TextStyle(color: AppColors.textPrimary)),
               onTap: () {
                 Navigator.pop(ctx);
@@ -699,14 +699,14 @@ class _CommentWidgetState extends State<CommentWidget> {
             ),
             if (authorId != null)
               ListTile(
-                leading: const Icon(Icons.label_outline,
+                leading: Icon(Icons.label_outline,
                     color: AppColors.textPrimary),
                 title: Text(
                   currentNote != null
                       ? 'Изменить заметку для $authorName'
                       : 'Добавить заметку для $authorName',
                   style:
-                      const TextStyle(color: AppColors.textPrimary),
+                      TextStyle(color: AppColors.textPrimary),
                 ),
                 onTap: () {
                   Navigator.pop(ctx);
@@ -731,7 +731,7 @@ class _CommentWidgetState extends State<CommentWidget> {
         content: TextField(
           controller: ctrl,
           autofocus: true,
-          style: const TextStyle(color: AppColors.textPrimary),
+          style: TextStyle(color: AppColors.textPrimary),
           decoration:
               const InputDecoration(hintText: 'Напиши заметку...'),
         ),

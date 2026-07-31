@@ -177,10 +177,10 @@ class _UserProfileScreenState extends State<UserProfileScreen> with SingleTicker
             pinned: true,
             expandedHeight: _subsite?['cover']?['data']?['uuid'] != null ? 200 : 0,
             leading: IconButton(
-              icon: const Icon(Icons.arrow_back, color: Colors.white),
+              icon: Icon(Icons.arrow_back, color: AppColors.textPrimary),
               onPressed: () => Navigator.pop(context),
             ),
-            title: Text(name, style: const TextStyle(color: Colors.white, fontSize: 16)),
+            title: Text(name, style: TextStyle(color: AppColors.textPrimary, fontSize: 16)),
             flexibleSpace: _subsite?['cover']?['data']?['uuid'] != null
                 ? FlexibleSpaceBar(
                     background: CachedNetworkImage(
@@ -293,7 +293,7 @@ class _UserProfileScreenState extends State<UserProfileScreen> with SingleTicker
             const SizedBox(height: 12),
             LinkifiedText(
               sub['description'] as String,
-              style: const TextStyle(
+              style: TextStyle(
                   color: AppColors.textSecondary, fontSize: 14, height: 1.4),
             ),
           ],

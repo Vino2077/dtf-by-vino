@@ -170,7 +170,7 @@ class _ChatScreenState extends State<ChatScreen> {
             child: _loading
                 ? const Center(child: CircularProgressIndicator())
                 : _messages.isEmpty
-                    ? const Center(
+                    ? Center(
                         child: Text('Нет сообщений',
                             style: TextStyle(color: AppColors.textMuted)))
                     : ListView.builder(
@@ -218,7 +218,7 @@ class _ChatScreenState extends State<ChatScreen> {
     return SafeArea(
       top: false,
       child: Container(
-        decoration: const BoxDecoration(
+        decoration: BoxDecoration(
           color: AppColors.bgDeep,
           border: Border(top: BorderSide(color: AppColors.divider, width: 1)),
         ),
@@ -245,14 +245,14 @@ class _ChatScreenState extends State<ChatScreen> {
                           (_replyTo['text'] ?? '📷 Вложение').toString(),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
+                          style: TextStyle(
                               color: AppColors.textMuted, fontSize: 12),
                         ),
                       ],
                     ),
                   ),
                   IconButton(
-                    icon: const Icon(Icons.close,
+                    icon: Icon(Icons.close,
                         size: 18, color: AppColors.textMuted),
                     onPressed: () => setState(() => _replyTo = null),
                   ),
@@ -267,7 +267,7 @@ class _ChatScreenState extends State<ChatScreen> {
                     focusNode: _focus,
                     minLines: 1,
                     maxLines: 5,
-                    style: const TextStyle(color: AppColors.textPrimary),
+                    style: TextStyle(color: AppColors.textPrimary),
                     decoration: const InputDecoration(
                       hintText: 'Сообщение…',
                     ),
@@ -410,7 +410,7 @@ class _MessageBubble extends StatelessWidget {
         onReply();
         return false;
       },
-      background: const Padding(
+      background: Padding(
         padding: EdgeInsets.only(left: 20),
         child: Align(
           alignment: Alignment.centerLeft,

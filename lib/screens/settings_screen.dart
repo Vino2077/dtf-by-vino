@@ -28,9 +28,15 @@ class SettingsScreen extends StatelessWidget {
       body: ListView(
         padding: const EdgeInsets.only(bottom: 40),
         children: [
-          _section('Внешний вид'),
+          _section(context, 'Внешний вид'),
+          _toggle(
+            'Светлая тема',
+            'Белое оформление вместо тёмного',
+            settings.lightTheme,
+            (v) => settings.setLightTheme(v),
+          ),
           _accentColorTile(context, settings),
-          _section('Комментарии'),
+          _section(context, 'Комментарии'),
           _toggle(
             'Показывать удалённые комментарии',
             'Удалённые комменты будут видны со специальной пометкой',
@@ -43,7 +49,7 @@ class SettingsScreen extends StatelessWidget {
             settings.autoExpandComments,
             (v) => settings.setAutoExpandComments(v),
           ),
-          _section('Ленты'),
+          _section(context, 'Ленты'),
           _toggle(
             'Автоматически сворачивать просмотренные посты',
             'Посты, которые ты уже открывал, будут свёрнуты в ленте',
@@ -51,7 +57,7 @@ class SettingsScreen extends StatelessWidget {
             (v) => settings.setAutoCollapseViewed(v),
           ),
           _batchSizeTile(context, settings),
-          _section('Фильтры'),
+          _section(context, 'Фильтры'),
           _toggle(
             'Скрывать посты компаний',
             'Посты блогов с чёрной галочкой (компании) не появятся в ленте',
@@ -59,21 +65,25 @@ class SettingsScreen extends StatelessWidget {
             (v) => settings.setHideCompanyPosts(v),
           ),
           _filterKeywordsTile(context, settings),
-          _section('Заметки о пользователях'),
+          _section(context, 'Заметки о пользователях'),
           _userNotesTile(context, settings),
-          _section('Кеш'),
+          _section(context, 'Кеш'),
           const _CacheTile(),
         ],
       ),
     );
   }
 
-  Widget _section(String title) => Padding(
+  /// Section header. The light theme paints these in the accent colour
+  /// (Figma), the dark one keeps them white.
+  Widget _section(BuildContext context, String title) => Padding(
         padding: const EdgeInsets.fromLTRB(20, 18, 20, 8),
         child: Text(
           title,
-          style: const TextStyle(
-              color: AppColors.textPrimary,
+          style: TextStyle(
+              color: AppColors.isLight
+                  ? Theme.of(context).colorScheme.primary
+                  : AppColors.textPrimary,
               fontSize: 15,
               fontWeight: FontWeight.w700),
         ),
@@ -99,13 +109,13 @@ class SettingsScreen extends StatelessWidget {
           shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(AppRadius.card)),
           title: Text(title,
-              style: const TextStyle(
+              style: TextStyle(
                   color: AppColors.textPrimary,
                   fontSize: 15,
                   fontWeight: FontWeight.w600)),
           subtitle: Text(subtitle,
               style:
-                  const TextStyle(color: AppColors.textMuted, fontSize: 12)),
+                  TextStyle(color: AppColors.textMuted, fontSize: 12)),
           value: value,
           onChanged: onChanged,
         ),
@@ -119,12 +129,12 @@ class SettingsScreen extends StatelessWidget {
     return _card(
       child: ListTile(
         contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-        title: const Text('Цвет акцента',
+        title: Text('Цвет акцента',
             style: TextStyle(
                 color: AppColors.textPrimary,
                 fontSize: 15,
                 fontWeight: FontWeight.w600)),
-        subtitle: const Text('Кнопки, ссылки, активные элементы',
+        subtitle: Text('Кнопки, ссылки, активные элементы',
             style: TextStyle(color: AppColors.textMuted, fontSize: 12)),
         trailing: Row(
           mainAxisSize: MainAxisSize.min,
@@ -132,7 +142,7 @@ class SettingsScreen extends StatelessWidget {
             if (!isDefault)
               GestureDetector(
                 onTap: () => settings.resetAccentColor(),
-                child: const Padding(
+                child: Padding(
                   padding: EdgeInsets.only(right: 10),
                   child:
                       Icon(Icons.refresh, color: AppColors.textMuted, size: 22),
@@ -192,17 +202,17 @@ class SettingsScreen extends StatelessWidget {
         child: ListTile(
           contentPadding:
               const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-          title: const Text('Постов за раз',
+          title: Text('Постов за раз',
               style: TextStyle(
                   color: AppColors.textPrimary,
                   fontSize: 15,
                   fontWeight: FontWeight.w600)),
-          subtitle: const Text('Сколько постов загружается при прокрутке',
+          subtitle: Text('Сколько постов загружается при прокрутке',
               style: TextStyle(color: AppColors.textMuted, fontSize: 12)),
           trailing: DropdownButton<int>(
             value: settings.batchSize,
             dropdownColor: AppColors.bgElevated,
-            style: const TextStyle(color: AppColors.textPrimary),
+            style: TextStyle(color: AppColors.textPrimary),
             underline: const SizedBox(),
             items: [15, 20, 30, 50]
                 .map((v) => DropdownMenuItem(value: v, child: Text('$v')))
@@ -221,7 +231,7 @@ class SettingsScreen extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(children: [
-              const Expanded(
+              Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -251,10 +261,10 @@ class SettingsScreen extends StatelessWidget {
                 children: settings.filterKeywords
                     .map((kw) => Chip(
                           label: Text(kw,
-                              style: const TextStyle(
+                              style: TextStyle(
                                   color: AppColors.textPrimary, fontSize: 13)),
                           backgroundColor: AppColors.bgElevated,
-                          deleteIcon: const Icon(Icons.close,
+                          deleteIcon: Icon(Icons.close,
                               size: 16, color: AppColors.textMuted),
                           onDeleted: () => settings.removeFilterKeyword(kw),
                           side: BorderSide.none,
@@ -268,7 +278,7 @@ class SettingsScreen extends StatelessWidget {
 
   Widget _userNotesTile(BuildContext context, SettingsService settings) {
     if (settings.userNotes.isEmpty) {
-      return const Padding(
+      return Padding(
         padding: EdgeInsets.fromLTRB(20, 4, 20, 8),
         child: Text(
           'Пока пусто. Добавить заметку можно через меню в посте или комментарии.',
@@ -281,14 +291,14 @@ class SettingsScreen extends StatelessWidget {
         children: settings.userNotes.entries
             .map((e) => ListTile(
                   title: Text('ID ${e.key}',
-                      style: const TextStyle(
+                      style: TextStyle(
                           color: AppColors.textPrimary, fontSize: 14)),
                   subtitle: Text(e.value,
                       style: TextStyle(
                           color: Theme.of(context).colorScheme.primary,
                           fontSize: 13)),
                   trailing: IconButton(
-                    icon: const Icon(Icons.delete_outline,
+                    icon: Icon(Icons.delete_outline,
                         color: AppColors.textMuted, size: 20),
                     onPressed: () => settings.setUserNote(e.key, ''),
                   ),
@@ -307,7 +317,7 @@ class SettingsScreen extends StatelessWidget {
         content: TextField(
           controller: ctrl,
           autofocus: true,
-          style: const TextStyle(color: AppColors.textPrimary),
+          style: TextStyle(color: AppColors.textPrimary),
           decoration: const InputDecoration(hintText: 'Ключевое слово...'),
         ),
         actions: [
@@ -401,13 +411,13 @@ class _CacheTileState extends State<_CacheTile> {
     return SettingsScreen._card(
       child: ListTile(
         contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-        title: const Text('Очистить кеш',
+        title: Text('Очистить кеш',
             style: TextStyle(
                 color: AppColors.textPrimary,
                 fontSize: 15,
                 fontWeight: FontWeight.w600)),
         subtitle: Text('Кешированные картинки, гифки и медиа · $_size',
-            style: const TextStyle(color: AppColors.textMuted, fontSize: 12)),
+            style: TextStyle(color: AppColors.textMuted, fontSize: 12)),
         trailing: _clearing
             ? const SizedBox(
                 width: 22,

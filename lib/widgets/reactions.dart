@@ -140,7 +140,7 @@ void showReactionPicker(BuildContext context, void Function(int reactionId) onPi
                   color: AppColors.textMuted,
                   borderRadius: BorderRadius.circular(2)),
             ),
-            const Padding(
+            Padding(
               padding: EdgeInsets.symmetric(vertical: 12),
               child: Text('Выбери реакцию',
                   style: TextStyle(
@@ -203,7 +203,7 @@ class AddReactionButton extends StatelessWidget {
       child: Container(
         width: size,
         height: size,
-        decoration: const BoxDecoration(
+        decoration: BoxDecoration(
           color: AppColors.bgElevated,
           shape: BoxShape.circle,
         ),
@@ -414,7 +414,7 @@ class _ReactionUsersSheetState extends State<_ReactionUsersSheet> {
                 color: AppColors.textMuted,
                 borderRadius: BorderRadius.circular(2)),
           ),
-          const Padding(
+          Padding(
             padding: EdgeInsets.symmetric(vertical: 12),
             child: Text('Реакции',
                 style: TextStyle(
@@ -426,11 +426,11 @@ class _ReactionUsersSheetState extends State<_ReactionUsersSheet> {
             padding: const EdgeInsets.symmetric(horizontal: 16),
             child: TextField(
               onChanged: (v) => setState(() => _query = v),
-              style: const TextStyle(
+              style: TextStyle(
                   color: AppColors.textPrimary, fontSize: 14),
               decoration: InputDecoration(
                 hintText: 'Поиск по имени',
-                prefixIcon: const Icon(Icons.search,
+                prefixIcon: Icon(Icons.search,
                     color: AppColors.textMuted, size: 20),
                 filled: true,
                 fillColor: AppColors.bgElevated,
@@ -452,7 +452,7 @@ class _ReactionUsersSheetState extends State<_ReactionUsersSheet> {
                           _users.isEmpty
                               ? 'Список реакций недоступен'
                               : 'Никого не найдено',
-                          style: const TextStyle(
+                          style: TextStyle(
                               color: AppColors.textSecondary),
                         ),
                       )
@@ -469,7 +469,7 @@ class _ReactionUsersSheetState extends State<_ReactionUsersSheet> {
                                 size: 38),
                             title: Text(
                                 subsite?['name'] ?? 'Аноним',
-                                style: const TextStyle(
+                                style: TextStyle(
                                     color: AppColors.textPrimary,
                                     fontSize: 14)),
                             trailing: rid != null

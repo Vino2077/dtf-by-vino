@@ -211,13 +211,13 @@ class _EditorScreenState extends State<EditorScreen> {
         child: Column(mainAxisSize: MainAxisSize.min, children: [
           const SizedBox(height: 8),
           ListTile(
-            leading: const Icon(Icons.photo_library, color: AppColors.textPrimary),
-            title: const Text('Фото', style: TextStyle(color: AppColors.textPrimary)),
+            leading: Icon(Icons.photo_library, color: AppColors.textPrimary),
+            title: Text('Фото', style: TextStyle(color: AppColors.textPrimary)),
             onTap: () => Navigator.pop(context, 'photo'),
           ),
           ListTile(
-            leading: const Icon(Icons.videocam, color: AppColors.textPrimary),
-            title: const Text('Видео', style: TextStyle(color: AppColors.textPrimary)),
+            leading: Icon(Icons.videocam, color: AppColors.textPrimary),
+            title: Text('Видео', style: TextStyle(color: AppColors.textPrimary)),
             onTap: () => Navigator.pop(context, 'video'),
           ),
           const SizedBox(height: 8),
@@ -261,12 +261,12 @@ class _EditorScreenState extends State<EditorScreen> {
     final url = await showDialog<String>(
       context: context,
       builder: (_) => AlertDialog(
-        title: const Text('Аудио по ссылке', style: TextStyle(color: AppColors.textPrimary)),
+        title: Text('Аудио по ссылке', style: TextStyle(color: AppColors.textPrimary)),
         content: TextField(
           controller: urlCtrl,
           autofocus: true,
-          style: const TextStyle(color: AppColors.textPrimary),
-          decoration: const InputDecoration(
+          style: TextStyle(color: AppColors.textPrimary),
+          decoration: InputDecoration(
             hintText: 'https://...',
             hintStyle: TextStyle(color: AppColors.textMuted),
           ),
@@ -436,20 +436,20 @@ class _EditorScreenState extends State<EditorScreen> {
     return AppBar(
       backgroundColor: AppColors.bgCard,
       elevation: 0,
-      leading: const BackButton(color: AppColors.textPrimary),
+      leading: BackButton(color: AppColors.textPrimary),
       titleSpacing: 0,
       title: GestureDetector(
         onTap: _showSubsiteSelector,
         child: Row(mainAxisSize: MainAxisSize.min, children: [
           Text(name,
-              style: const TextStyle(
+              style: TextStyle(
                   color: AppColors.textPrimary, fontSize: 15, fontWeight: FontWeight.w600)),
-          const Icon(Icons.arrow_drop_down, color: AppColors.textSecondary, size: 20),
+          Icon(Icons.arrow_drop_down, color: AppColors.textSecondary, size: 20),
         ]),
       ),
       actions: [
         IconButton(
-          icon: const Icon(Icons.more_vert, color: AppColors.textSecondary),
+          icon: Icon(Icons.more_vert, color: AppColors.textSecondary),
           onPressed: _showMoreMenu,
         ),
         _publishing
@@ -506,7 +506,7 @@ class _EditorScreenState extends State<EditorScreen> {
       child: TextField(
         controller: _titleCtrl,
         focusNode: _titleFocus,
-        style: const TextStyle(
+        style: TextStyle(
           color: AppColors.textPrimary,
           fontSize: 24,
           fontWeight: FontWeight.bold,
@@ -514,7 +514,7 @@ class _EditorScreenState extends State<EditorScreen> {
         ),
         maxLines: null,
         textCapitalization: TextCapitalization.sentences,
-        decoration: const InputDecoration(
+        decoration: InputDecoration(
           hintText: 'Заголовок',
           hintStyle: TextStyle(
               color: AppColors.textMuted, fontSize: 24, fontWeight: FontWeight.bold),
@@ -554,14 +554,14 @@ class _EditorScreenState extends State<EditorScreen> {
         children: [
           Expanded(child: content),
           if (_reorderMode)
-            const Padding(
+            Padding(
               padding: EdgeInsets.only(left: 8, top: 10),
               child: Icon(Icons.drag_handle, size: 20, color: AppColors.textMuted),
             )
           else if (isFocused)
             GestureDetector(
               onTap: () => _deleteBlock(index),
-              child: const Padding(
+              child: Padding(
                 padding: EdgeInsets.only(left: 8, top: 10),
                 child: Icon(Icons.close, size: 18, color: AppColors.textMuted),
               ),
@@ -579,10 +579,10 @@ class _EditorScreenState extends State<EditorScreen> {
     return TextField(
       controller: block.ctrl,
       focusNode: block.focusNode,
-      style: const TextStyle(color: AppColors.textPrimary, fontSize: 16, height: 1.55),
+      style: TextStyle(color: AppColors.textPrimary, fontSize: 16, height: 1.55),
       maxLines: null,
       textCapitalization: TextCapitalization.sentences,
-      decoration: const InputDecoration(
+      decoration: InputDecoration(
         hintText: 'Текст...',
         hintStyle: TextStyle(color: AppColors.textMuted),
         border: InputBorder.none,
@@ -624,7 +624,7 @@ class _EditorScreenState extends State<EditorScreen> {
         textCapitalization: TextCapitalization.sentences,
         decoration: InputDecoration(
           hintText: isH2 ? 'Заголовок H2' : 'Заголовок H3',
-          hintStyle: const TextStyle(color: AppColors.textMuted, fontWeight: FontWeight.bold),
+          hintStyle: TextStyle(color: AppColors.textMuted, fontWeight: FontWeight.bold),
           border: InputBorder.none,
           isDense: true,
           contentPadding: const EdgeInsets.symmetric(vertical: 4),
@@ -656,7 +656,7 @@ class _EditorScreenState extends State<EditorScreen> {
       child: TextField(
         controller: block.ctrl,
         focusNode: block.focusNode,
-        style: const TextStyle(
+        style: TextStyle(
           color: AppColors.textSecondary,
           fontSize: 16,
           fontStyle: FontStyle.italic,
@@ -664,7 +664,7 @@ class _EditorScreenState extends State<EditorScreen> {
         ),
         maxLines: null,
         textCapitalization: TextCapitalization.sentences,
-        decoration: const InputDecoration(
+        decoration: InputDecoration(
           hintText: 'Цитата...',
           hintStyle: TextStyle(color: AppColors.textMuted, fontStyle: FontStyle.italic),
           border: InputBorder.none,
@@ -702,12 +702,12 @@ class _EditorScreenState extends State<EditorScreen> {
             child: TextField(
               controller: block.listCtrls[i],
               focusNode: block.listFoci[i],
-              style: const TextStyle(color: AppColors.textPrimary, fontSize: 16, height: 1.4),
+              style: TextStyle(color: AppColors.textPrimary, fontSize: 16, height: 1.4),
               textInputAction: TextInputAction.next,
               textCapitalization: TextCapitalization.sentences,
               decoration: InputDecoration(
                 hintText: 'Пункт ${i + 1}...',
-                hintStyle: const TextStyle(color: AppColors.textMuted),
+                hintStyle: TextStyle(color: AppColors.textMuted),
                 border: InputBorder.none,
                 isDense: true,
                 contentPadding: const EdgeInsets.symmetric(vertical: 4),
@@ -718,7 +718,7 @@ class _EditorScreenState extends State<EditorScreen> {
           if (block.listCtrls.length > 1)
             GestureDetector(
               onTap: () => _removeListItem(block, i),
-              child: const Padding(
+              child: Padding(
                 padding: EdgeInsets.only(left: 6),
                 child: Icon(Icons.remove_circle_outline, size: 16, color: AppColors.textMuted),
               ),
@@ -726,8 +726,8 @@ class _EditorScreenState extends State<EditorScreen> {
         ]),
       TextButton.icon(
         onPressed: () => _addListItem(block, block.listCtrls.length - 1),
-        icon: const Icon(Icons.add, size: 15, color: AppColors.textMuted),
-        label: const Text('Добавить пункт',
+        icon: Icon(Icons.add, size: 15, color: AppColors.textMuted),
+        label: Text('Добавить пункт',
             style: TextStyle(color: AppColors.textMuted, fontSize: 13)),
         style: TextButton.styleFrom(
           padding: const EdgeInsets.only(left: 16),
@@ -768,15 +768,15 @@ class _EditorScreenState extends State<EditorScreen> {
           border: Border.all(color: AppColors.bgElevated),
         ),
         child: Row(children: [
-          const Icon(Icons.audiotrack_outlined, color: AppColors.textSecondary, size: 24),
+          Icon(Icons.audiotrack_outlined, color: AppColors.textSecondary, size: 24),
           const SizedBox(width: 12),
           Expanded(
             child: block.audioData != null
                 ? Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                     TextField(
                       controller: block.audioTitleCtrl,
-                      style: const TextStyle(color: AppColors.textPrimary, fontSize: 15),
-                      decoration: const InputDecoration(
+                      style: TextStyle(color: AppColors.textPrimary, fontSize: 15),
+                      decoration: InputDecoration(
                         hintText: 'Название аудио...',
                         hintStyle: TextStyle(color: AppColors.textMuted),
                         border: InputBorder.none,
@@ -784,10 +784,10 @@ class _EditorScreenState extends State<EditorScreen> {
                         contentPadding: EdgeInsets.zero,
                       ),
                     ),
-                    const Text('Аудио прикреплено ✓',
+                    Text('Аудио прикреплено ✓',
                         style: TextStyle(color: AppColors.textMuted, fontSize: 12)),
                   ])
-                : const Text('Загрузка аудио...',
+                : Text('Загрузка аудио...',
                     style: TextStyle(color: AppColors.textMuted)),
           ),
         ]),
@@ -815,7 +815,7 @@ class _EditorScreenState extends State<EditorScreen> {
                       Icon(Icons.add_photo_alternate_outlined,
                           color: AppColors.textMuted, size: 30),
                       const SizedBox(height: 6),
-                      const Text('Добавить фото или видео',
+                      Text('Добавить фото или видео',
                           style: TextStyle(color: AppColors.textMuted, fontSize: 13)),
                     ]),
                   ),
@@ -838,7 +838,7 @@ class _EditorScreenState extends State<EditorScreen> {
                             borderRadius: BorderRadius.circular(8),
                             border: Border.all(color: AppColors.bgElevated),
                           ),
-                          child: const Center(
+                          child: Center(
                             child: Icon(Icons.add, color: AppColors.textMuted, size: 28),
                           ),
                         ),
@@ -898,7 +898,7 @@ class _EditorScreenState extends State<EditorScreen> {
       height: 48,
       decoration: BoxDecoration(
         color: AppColors.bgCard,
-        border: const Border(top: BorderSide(color: AppColors.bgElevated)),
+        border: Border(top: BorderSide(color: AppColors.bgElevated)),
       ),
       child: Row(children: [
         _toolTxt('H2', onTap: () => _convertBlock(_BType.header, headerStyle: 'h2')),
@@ -979,7 +979,7 @@ class _EditorScreenState extends State<EditorScreen> {
       context: context,
       builder: (_) => SafeArea(
         child: Column(mainAxisSize: MainAxisSize.min, children: [
-          const Padding(
+          Padding(
             padding: EdgeInsets.symmetric(vertical: 14),
             child: Text('Опубликовать в',
                 style: TextStyle(
@@ -987,9 +987,9 @@ class _EditorScreenState extends State<EditorScreen> {
           ),
           for (final s in _subsites)
             ListTile(
-              leading: const Icon(Icons.person_outline, color: AppColors.textPrimary),
+              leading: Icon(Icons.person_outline, color: AppColors.textPrimary),
               title: Text(s['name'] ?? '',
-                  style: const TextStyle(color: AppColors.textPrimary)),
+                  style: TextStyle(color: AppColors.textPrimary)),
               trailing: _subsite?['id'] == s['id']
                   ? Icon(Icons.check, color: Theme.of(context).colorScheme.primary)
                   : null,
@@ -1012,9 +1012,9 @@ class _EditorScreenState extends State<EditorScreen> {
           builder: (ctx, setS) => Column(mainAxisSize: MainAxisSize.min, children: [
             const SizedBox(height: 12),
             ListTile(
-              leading: const Icon(Icons.eighteen_up_rating_outlined,
+              leading: Icon(Icons.eighteen_up_rating_outlined,
                   color: AppColors.textPrimary),
-              title: const Text('18+', style: TextStyle(color: AppColors.textPrimary)),
+              title: Text('18+', style: TextStyle(color: AppColors.textPrimary)),
               trailing: Switch(
                 value: _nsfw,
                 onChanged: (v) {
@@ -1024,10 +1024,10 @@ class _EditorScreenState extends State<EditorScreen> {
               ),
             ),
             ListTile(
-              leading: const Icon(Icons.reorder, color: AppColors.textPrimary),
+              leading: Icon(Icons.reorder, color: AppColors.textPrimary),
               title: Text(
                 _reorderMode ? 'Выйти из режима перестановки' : 'Переставить блоки',
-                style: const TextStyle(color: AppColors.textPrimary),
+                style: TextStyle(color: AppColors.textPrimary),
               ),
               onTap: () {
                 setState(() => _reorderMode = !_reorderMode);

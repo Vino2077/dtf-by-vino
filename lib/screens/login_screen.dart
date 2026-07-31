@@ -73,8 +73,8 @@ class _LoginScreenState extends State<LoginScreen> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('Войти по токену',
-                style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
+            Text('Войти по токену',
+                style: TextStyle(color: AppColors.textPrimary, fontSize: 16, fontWeight: FontWeight.bold)),
             const SizedBox(height: 8),
             const Text(
               'На сайте dtf.ru: Профиль → Настройки → внизу страницы '
@@ -146,10 +146,10 @@ class _LoginScreenState extends State<LoginScreen> {
       appBar: AppBar(
         backgroundColor: AppColors.bgCard,
         leading: IconButton(
-          icon: const Icon(Icons.close, color: Colors.white),
+          icon: Icon(Icons.close, color: AppColors.textPrimary),
           onPressed: () => Navigator.pop(context),
         ),
-        title: const Text('Войти в DTF', style: TextStyle(color: Colors.white)),
+        title: Text('Войти в DTF', style: TextStyle(color: AppColors.textPrimary)),
       ),
       body: SafeArea(
         child: SingleChildScrollView(
@@ -164,7 +164,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 controller: _emailCtrl,
                 keyboardType: TextInputType.emailAddress,
                 textInputAction: TextInputAction.next,
-                style: const TextStyle(color: Colors.white),
+                style: TextStyle(color: AppColors.textPrimary),
                 decoration: _fieldDecoration('email@example.com'),
               ),
               const SizedBox(height: 16),
@@ -174,7 +174,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 controller: _passwordCtrl,
                 obscureText: _obscure,
                 textInputAction: TextInputAction.done,
-                style: const TextStyle(color: Colors.white),
+                style: TextStyle(color: AppColors.textPrimary),
                 onSubmitted: (_) => _submit(),
                 decoration: _fieldDecoration('Пароль').copyWith(
                   suffixIcon: IconButton(

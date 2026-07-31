@@ -41,10 +41,10 @@ class _BookmarksScreenState extends State<BookmarksScreen> with SingleTickerProv
       appBar: AppBar(
         backgroundColor: AppColors.bgCard,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Colors.white),
+          icon: Icon(Icons.arrow_back, color: AppColors.textPrimary),
           onPressed: () => Navigator.pop(context),
         ),
-        title: const Text('Закладки', style: TextStyle(color: Colors.white)),
+        title: Text('Закладки', style: TextStyle(color: AppColors.textPrimary)),
         bottom: TabBar(
           controller: _tabController,
           tabs: _tabs.map((t) => Tab(text: t.$2)).toList(),

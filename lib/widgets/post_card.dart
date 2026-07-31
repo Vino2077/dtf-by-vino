@@ -242,13 +242,13 @@ class _PostCardState extends State<PostCard> {
                         ]),
                         Row(children: [
                           Text(subsite?['name'] ?? '',
-                              style: const TextStyle(
+                              style: TextStyle(
                                   color: AppColors.textMuted, fontSize: 12)),
-                          const Text('  ·  ',
+                          Text('  ·  ',
                               style: TextStyle(
                                   color: AppColors.textMuted, fontSize: 12)),
                           Text(_timeAgo(post['date']),
-                              style: const TextStyle(
+                              style: TextStyle(
                                   color: AppColors.textMuted, fontSize: 12)),
                         ]),
                       ],
@@ -268,7 +268,7 @@ class _PostCardState extends State<PostCard> {
                   const SizedBox(width: 4),
                   GestureDetector(
                     onTap: () => _showPostMenu(context),
-                    child: const Icon(Icons.more_vert,
+                    child: Icon(Icons.more_vert,
                         color: AppColors.textMuted, size: 20),
                   ),
                 ],
@@ -310,7 +310,7 @@ class _PostCardState extends State<PostCard> {
                         previewText,
                         maxLines: 3,
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
+                        style: TextStyle(
                             color: AppColors.textSecondary,
                             fontSize: 14,
                             height: 1.4),
@@ -375,12 +375,12 @@ class _PostCardState extends State<PostCard> {
                         onTap: widget.onTapComments ?? widget.onTap,
                         behavior: HitTestBehavior.opaque,
                         child: Row(children: [
-                          const Icon(Icons.chat_bubble_outline,
+                          Icon(Icons.chat_bubble_outline,
                               size: 15,
                               color: AppColors.textMuted),
                           const SizedBox(width: 4),
                           Text('${counters?['comments'] ?? 0}',
-                              style: const TextStyle(
+                              style: TextStyle(
                                   color: AppColors.textMuted,
                                   fontSize: 13)),
                         ]),
@@ -413,16 +413,16 @@ class _PostCardState extends State<PostCard> {
                       GestureDetector(
                         onTap: () => _sharePost(context),
                         behavior: HitTestBehavior.opaque,
-                        child: const Icon(Icons.share_outlined,
+                        child: Icon(Icons.share_outlined,
                             size: 16, color: AppColors.textMuted),
                       ),
                       const Spacer(),
                       if ((counters?['hits'] ?? 0) > 0) ...[
                         Text(_fmtCount(counters?['hits']),
-                            style: const TextStyle(
+                            style: TextStyle(
                                 color: AppColors.textMuted, fontSize: 13)),
                         const SizedBox(width: 4),
-                        const Icon(Icons.remove_red_eye_outlined,
+                        Icon(Icons.remove_red_eye_outlined,
                             size: 15, color: AppColors.textMuted),
                       ],
                     ]),
@@ -444,7 +444,7 @@ class _PostCardState extends State<PostCard> {
                   post['title'] ?? '',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
+                  style: TextStyle(
                       color: AppColors.textMuted, fontSize: 13),
                 ),
               ),
@@ -489,14 +489,14 @@ class _PostCardState extends State<PostCard> {
             const SizedBox(height: 16),
             if (authorId != null)
               ListTile(
-                leading: const Icon(Icons.label_outline,
+                leading: Icon(Icons.label_outline,
                     color: AppColors.textPrimary),
                 title: Text(
                   currentNote != null
                       ? 'Изменить заметку для $authorName'
                       : 'Добавить заметку для $authorName',
                   style:
-                      const TextStyle(color: AppColors.textPrimary),
+                      TextStyle(color: AppColors.textPrimary),
                 ),
                 onTap: () {
                   Navigator.pop(context);
@@ -512,7 +512,7 @@ class _PostCardState extends State<PostCard> {
               title: Text(
                 _collapsed ? 'Развернуть' : 'Свернуть',
                 style:
-                    const TextStyle(color: AppColors.textPrimary),
+                    TextStyle(color: AppColors.textPrimary),
               ),
               onTap: () {
                 Navigator.pop(context);
@@ -536,7 +536,7 @@ class _PostCardState extends State<PostCard> {
         content: TextField(
           controller: ctrl,
           autofocus: true,
-          style: const TextStyle(color: AppColors.textPrimary),
+          style: TextStyle(color: AppColors.textPrimary),
           decoration:
               const InputDecoration(hintText: 'Напиши заметку...'),
         ),
@@ -628,7 +628,7 @@ class _PopularCommentPreview extends StatelessWidget {
                     author?['name'] ?? '',
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
+                    style: TextStyle(
                         color: AppColors.textSecondary,
                         fontSize: 12,
                         fontWeight: FontWeight.w600),
@@ -639,7 +639,7 @@ class _PopularCommentPreview extends StatelessWidget {
                       text,
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
+                      style: TextStyle(
                           color: AppColors.textPrimary,
                           fontSize: 13,
                           height: 1.35),

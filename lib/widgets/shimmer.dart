@@ -149,7 +149,7 @@ class _PostCardSkeleton extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 16),
-          const Divider(height: 1, color: AppColors.divider),
+          Divider(height: 1, color: AppColors.divider),
         ],
       ),
     );

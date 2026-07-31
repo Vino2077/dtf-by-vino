@@ -80,7 +80,7 @@ class _ChatsScreenState extends State<ChatsScreen> {
         backgroundColor: Colors.transparent,
       ),
       body: !loggedIn
-          ? const Center(
+          ? Center(
               child: Padding(
                 padding: EdgeInsets.all(24),
                 child: Text('Войди в аккаунт, чтобы читать сообщения',
@@ -91,7 +91,7 @@ class _ChatsScreenState extends State<ChatsScreen> {
           : _loading
               ? const Center(child: CircularProgressIndicator())
               : _channels.isEmpty
-                  ? const Center(
+                  ? Center(
                       child: Text('Пока нет диалогов',
                           style: TextStyle(color: AppColors.textMuted)))
                   : RefreshIndicator(
@@ -190,7 +190,7 @@ class _ChannelTile extends StatelessWidget {
                         channel['title'] ?? '',
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
+                        style: TextStyle(
                             color: AppColors.textPrimary,
                             fontSize: 15,
                             fontWeight: FontWeight.w600),
@@ -198,7 +198,7 @@ class _ChannelTile extends StatelessWidget {
                     ),
                     const SizedBox(width: 8),
                     Text(_time(),
-                        style: const TextStyle(
+                        style: TextStyle(
                             color: AppColors.textMuted, fontSize: 12)),
                   ]),
                   const SizedBox(height: 3),

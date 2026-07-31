@@ -40,7 +40,7 @@ class BlockView extends StatelessWidget {
       padding: const EdgeInsets.only(bottom: 14),
       child: LinkifiedText(
         b.html,
-        style: const TextStyle(
+        style: TextStyle(
             color: AppColors.textPrimary, fontSize: 16, height: 1.65),
       ),
     );
@@ -51,7 +51,7 @@ class BlockView extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.only(bottom: 12, top: 8),
       child: Text(text,
-          style: const TextStyle(
+          style: TextStyle(
               color: AppColors.textPrimary,
               fontSize: 20,
               fontWeight: FontWeight.bold,
@@ -73,7 +73,7 @@ class BlockView extends StatelessWidget {
                 Padding(
                   padding: const EdgeInsets.only(top: 6),
                   child: Text(item.caption!,
-                      style: const TextStyle(
+                      style: TextStyle(
                           color: AppColors.textMuted, fontSize: 13)),
                 ),
             ],
@@ -93,13 +93,13 @@ class BlockView extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
       decoration: BoxDecoration(
         border: Border(left: BorderSide(color: accent, width: 3)),
-        color: const Color(0xFF141414),
+        color: AppColors.bgCard,
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(text,
-              style: const TextStyle(
+              style: TextStyle(
                   color: AppColors.textSecondary,
                   fontSize: 15,
                   fontStyle: FontStyle.italic,
@@ -107,7 +107,7 @@ class BlockView extends StatelessWidget {
           if (subtitle.isNotEmpty) ...[
             const SizedBox(height: 6),
             Text('— $subtitle',
-                style: const TextStyle(
+                style: TextStyle(
                     color: AppColors.textMuted, fontSize: 13)),
           ],
         ],
@@ -139,7 +139,7 @@ class BlockView extends StatelessWidget {
                   ),
                   Expanded(
                     child: Text(text,
-                        style: const TextStyle(
+                        style: TextStyle(
                             color: AppColors.textPrimary,
                             fontSize: 15,
                             height: 1.5)),
@@ -152,7 +152,7 @@ class BlockView extends StatelessWidget {
   }
 
   Widget _divider() {
-    return const Padding(
+    return Padding(
       padding: EdgeInsets.symmetric(vertical: 16),
       child: Center(
         child: Text('* * *',
@@ -169,7 +169,7 @@ class BlockView extends StatelessWidget {
       width: double.infinity,
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: const Color(0xFF141414),
+        color: AppColors.bgCard,
         borderRadius: BorderRadius.circular(8),
         border: Border.all(color: AppColors.bgElevated),
       ),
@@ -177,7 +177,7 @@ class BlockView extends StatelessWidget {
         scrollDirection: Axis.horizontal,
         child: Text(
           b.code,
-          style: const TextStyle(
+          style: TextStyle(
               color: AppColors.textSecondary,
               fontSize: 13,
               fontFamily: 'monospace',
@@ -195,7 +195,7 @@ class BlockView extends StatelessWidget {
         margin: const EdgeInsets.only(bottom: 14),
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
-          color: const Color(0xFF141414),
+          color: AppColors.bgCard,
           borderRadius: BorderRadius.circular(8),
           border: Border.all(color: AppColors.bgElevated),
         ),
@@ -205,12 +205,12 @@ class BlockView extends StatelessWidget {
           Expanded(
             child: Text(
                 b.title?.isNotEmpty == true ? b.title! : 'Аудио',
-                style: const TextStyle(
+                style: TextStyle(
                     color: AppColors.textPrimary, fontSize: 14),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis),
           ),
-          const Icon(Icons.open_in_new,
+          Icon(Icons.open_in_new,
               color: AppColors.textMuted, size: 16),
         ]),
       ),
@@ -225,7 +225,7 @@ class BlockView extends StatelessWidget {
       margin: const EdgeInsets.only(bottom: 14),
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: const Color(0xFF141414),
+        color: AppColors.bgCard,
         borderRadius: BorderRadius.circular(8),
         border: Border.all(color: AppColors.bgElevated),
       ),
@@ -238,7 +238,7 @@ class BlockView extends StatelessWidget {
             Expanded(
               child: Text(
                   b.title?.isNotEmpty == true ? b.title! : 'Опрос',
-                  style: const TextStyle(
+                  style: TextStyle(
                       color: AppColors.textPrimary,
                       fontSize: 15,
                       fontWeight: FontWeight.bold)),
@@ -254,7 +254,7 @@ class BlockView extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(item.text,
-                      style: const TextStyle(
+                      style: TextStyle(
                           color: AppColors.textSecondary, fontSize: 13)),
                   if (maxVotes > 0) ...[
                     const SizedBox(height: 4),
@@ -273,7 +273,7 @@ class BlockView extends StatelessWidget {
             );
           }),
           const SizedBox(height: 2),
-          const Text('Открой на сайте, чтобы проголосовать',
+          Text('Открой на сайте, чтобы проголосовать',
               style:
                   TextStyle(color: AppColors.textMuted, fontSize: 11)),
         ],
@@ -295,7 +295,7 @@ class BlockView extends StatelessWidget {
         margin: const EdgeInsets.only(bottom: 14),
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
-          color: const Color(0xFF141414),
+          color: AppColors.bgCard,
           borderRadius: BorderRadius.circular(8),
           border: Border.all(color: AppColors.bgElevated),
         ),
@@ -328,14 +328,14 @@ class BlockView extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               children: [
                 Text(label,
-                    style: const TextStyle(
+                    style: TextStyle(
                         color: AppColors.textPrimary, fontSize: 14),
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis),
                 if (b.subtitle != null && b.subtitle!.isNotEmpty) ...[
                   const SizedBox(height: 2),
                   Text(b.subtitle!,
-                      style: const TextStyle(
+                      style: TextStyle(
                           color: AppColors.textMuted, fontSize: 12),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis),
@@ -345,7 +345,7 @@ class BlockView extends StatelessWidget {
           ),
           if (b.url != null) ...[
             const SizedBox(width: 6),
-            const Icon(Icons.open_in_new,
+            Icon(Icons.open_in_new,
                 color: AppColors.textMuted, size: 16),
           ],
         ]),

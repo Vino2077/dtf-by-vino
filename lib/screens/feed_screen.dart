@@ -63,7 +63,9 @@ class FeedScreenState extends State<FeedScreen> with SingleTickerProviderStateMi
         bottom: false,
         child: Column(
           children: [
-            Padding(
+            Container(
+              // Figma light theme puts the feed tabs on a white strip.
+              color: AppColors.isLight ? AppColors.topBar : Colors.transparent,
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
               child: TabBar(
                 controller: _tabController,
@@ -160,7 +162,7 @@ class _NewsItem extends StatelessWidget {
                     post['title'] ?? '',
                     maxLines: 3,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
+                    style: TextStyle(
                       color: AppColors.textPrimary,
                       fontSize: 14,
                       fontWeight: FontWeight.w500,
@@ -170,7 +172,7 @@ class _NewsItem extends StatelessWidget {
                   const SizedBox(height: 5),
                   Text(
                     post['subsite']?['name'] ?? '',
-                    style: const TextStyle(
+                    style: TextStyle(
                         color: AppColors.textSecondary, fontSize: 12),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
@@ -312,7 +314,7 @@ class FeedListState extends State<FeedList> with AutomaticKeepAliveClientMixin {
     final isLoggedIn = context.select<SettingsService, bool>((s) => s.isLoggedIn);
 
     if (widget.feedType == 'my' && !isLoggedIn) {
-      return const Center(
+      return Center(
         child: Padding(
           padding: EdgeInsets.all(24),
           child: Text(
@@ -332,9 +334,9 @@ class FeedListState extends State<FeedList> with AutomaticKeepAliveClientMixin {
           onRefresh: _fetchPosts,
           child: _posts.isEmpty
               ? ListView(
-                  physics: const AlwaysScrollableScrollPhysics(),
+                  physics: AlwaysScrollableScrollPhysics(),
                   padding: EdgeInsets.only(bottom: bottomPad),
-                  children: const [
+                  children: [
                     SizedBox(height: 200),
                     Center(
                         child: Text('Нет постов',

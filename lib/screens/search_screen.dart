@@ -90,7 +90,7 @@ class _SearchScreenState extends State<SearchScreen> {
                 ),
                 child: TextField(
                   controller: _ctrl,
-                  style: const TextStyle(color: Colors.white),
+                  style: TextStyle(color: AppColors.textPrimary),
                   textInputAction: TextInputAction.search,
                   onSubmitted: _search,
                   decoration: InputDecoration(
@@ -196,7 +196,7 @@ class _SectionHeader extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 14, 16, 8),
       child: Text(title,
-          style: const TextStyle(
+          style: TextStyle(
               color: AppColors.textPrimary,
               fontSize: 17,
               fontWeight: FontWeight.w800)),
@@ -301,26 +301,26 @@ class _BlogTileState extends State<_BlogTile> {
                     b['name'] ?? 'Без названия',
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
+                    style: TextStyle(
                         color: AppColors.textPrimary,
                         fontSize: 15,
                         fontWeight: FontWeight.w600),
                   ),
                   const SizedBox(height: 3),
                   Row(children: [
-                    const Icon(Icons.people_outline,
+                    Icon(Icons.people_outline,
                         size: 13, color: AppColors.textMuted),
                     const SizedBox(width: 3),
                     Text(_fmtCount(subs),
-                        style: const TextStyle(
+                        style: TextStyle(
                             color: AppColors.textSecondary, fontSize: 12)),
                     if (rating != null) ...[
                       const SizedBox(width: 10),
-                      const Icon(Icons.trending_up,
+                      Icon(Icons.trending_up,
                           size: 13, color: AppColors.textMuted),
                       const SizedBox(width: 3),
                       Text(_fmtCount(rating),
-                          style: const TextStyle(
+                          style: TextStyle(
                               color: AppColors.textSecondary, fontSize: 12)),
                     ],
                   ]),
@@ -395,18 +395,18 @@ class _CommentPreviewTile extends StatelessWidget {
                   author?['name'] ?? '',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
+                  style: TextStyle(
                       color: AppColors.textPrimary,
                       fontSize: 13,
                       fontWeight: FontWeight.w600),
                 ),
               ),
               if (likes != null) ...[
-                const Icon(Icons.favorite,
+                Icon(Icons.favorite,
                     size: 13, color: AppColors.textMuted),
                 const SizedBox(width: 3),
                 Text('$likes',
-                    style: const TextStyle(
+                    style: TextStyle(
                         color: AppColors.textSecondary, fontSize: 12)),
               ],
             ]),
@@ -416,7 +416,7 @@ class _CommentPreviewTile extends StatelessWidget {
                 text,
                 maxLines: 3,
                 overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
+                style: TextStyle(
                     color: AppColors.textSecondary,
                     fontSize: 13,
                     height: 1.35),
@@ -425,7 +425,7 @@ class _CommentPreviewTile extends StatelessWidget {
             if (postTitle.toString().isNotEmpty) ...[
               const SizedBox(height: 8),
               Row(children: [
-                const Icon(Icons.article_outlined,
+                Icon(Icons.article_outlined,
                     size: 12, color: AppColors.textMuted),
                 const SizedBox(width: 4),
                 Expanded(
@@ -433,7 +433,7 @@ class _CommentPreviewTile extends StatelessWidget {
                     postTitle,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
+                    style: TextStyle(
                         color: AppColors.textMuted, fontSize: 11),
                   ),
                 ),

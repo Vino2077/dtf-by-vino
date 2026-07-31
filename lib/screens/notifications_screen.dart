@@ -62,7 +62,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     final settings = context.watch<SettingsService>();
 
     if (!settings.isLoggedIn) {
-      return const Scaffold(
+      return Scaffold(
         backgroundColor: Colors.transparent,
         body: Center(
           child: Text('Войди в аккаунт, чтобы видеть уведомления',
@@ -78,7 +78,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
         child: _loading
             ? const NotificationsSkeleton()
             : _items.isEmpty
-                ? const Center(
+                ? Center(
                     child: Text('Нет уведомлений',
                         style: TextStyle(color: AppColors.textSecondary)))
                 : RefreshIndicator(
@@ -382,7 +382,7 @@ class _NotificationTile extends StatelessWidget {
           spans.add(TextSpan(text: _clean(html.substring(last, m.start))));
         }
         spans.add(TextSpan(text: _clean(m.group(2)!),
-            style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white)));
+            style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.textPrimary)));
         last = m.end;
       }
       if (last < html.length) spans.add(TextSpan(text: _clean(html.substring(last))));
@@ -424,7 +424,7 @@ class _NotificationTile extends StatelessWidget {
       ),
       title: Text.rich(
         TextSpan(
-          style: const TextStyle(
+          style: TextStyle(
               color: AppColors.textSecondary,
               fontSize: 14,
               height: 1.35),
@@ -437,7 +437,7 @@ class _NotificationTile extends StatelessWidget {
           ? Padding(
               padding: const EdgeInsets.only(top: 2),
               child: Text(_timeAgo(date),
-                  style: const TextStyle(
+                  style: TextStyle(
                       color: AppColors.textMuted, fontSize: 12)),
             )
           : null,
