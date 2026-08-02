@@ -2,7 +2,9 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
-import '../api/dtf_api.dart';
+import '../features/chat/data/chat_repository.dart';
+import '../features/chat/presentation/chat_controller.dart';
+import '../models/channel.dart';
 import '../services/settings_service.dart';
 import '../theme.dart';
 import '../util/osnova_image.dart';
@@ -14,7 +16,7 @@ import '../widgets/avatar.dart';
 /// open). Instant delivery via the Socket.IO `m:{mHash}` channel is a planned
 /// follow-up. Swipe a bubble to reply to it.
 class ChatScreen extends StatefulWidget {
-  final dynamic channel;
+  final Channel channel;
   const ChatScreen({super.key, required this.channel});
 
   @override
@@ -23,23 +25,28 @@ class ChatScreen extends StatefulWidget {
 
 class _ChatScreenState extends State<ChatScreen> {
   // Newest-first (index 0 == newest) so it maps directly onto a reversed list.
-  final List<dynamic> _messages = [];
+  late final ChatController _controller;
+  List<Map<String, dynamic>> get _messages => _controller.messages.reversed
+      .map((message) => message.rawJson)
+      .toList(growable: false);
   bool _loading = true;
-  bool _loadingOlder = false;
+  bool get _loadingOlder => _controller.isLoadingMore;
   bool _hasOlder = true;
-  bool _sending = false;
-  dynamic _replyTo; // the message being replied to, or null
+  bool get _sending => _controller.isSending;
+  Map<String, dynamic>? _replyTo; // the message being replied to, or null
 
   final _ctrl = TextEditingController();
   final _scroll = ScrollController();
   final _focus = FocusNode();
   Timer? _poll;
 
-  int get _channelId => int.tryParse('${widget.channel['id']}') ?? 0;
+  int get _channelId => widget.channel.id;
 
   @override
   void initState() {
     super.initState();
+    _controller = ChatController(context.read<ChatRepository>())
+      ..addListener(_onChanged);
     _scroll.addListener(() {
       final pos = _scroll.position;
       // Reversed list → older messages are near maxScrollExtent (the top).
@@ -51,6 +58,9 @@ class _ChatScreenState extends State<ChatScreen> {
 
   @override
   void dispose() {
+    _controller
+      ..removeListener(_onChanged)
+      ..dispose();
     _poll?.cancel();
     _ctrl.dispose();
     _scroll.dispose();
@@ -58,75 +68,54 @@ class _ChatScreenState extends State<ChatScreen> {
     super.dispose();
   }
 
+  void _onChanged() {
+    if (mounted) setState(() {});
+  }
+
   Future<void> _loadLatest() async {
-    final settings = context.read<SettingsService>();
-    final list = await DtfApi.getMessages(_channelId, settings);
+    await _controller.loadMessages(_channelId, refresh: true);
     if (!mounted) return;
     setState(() {
-      _messages
-        ..clear()
-        ..addAll(list.reversed);
       _loading = false;
-      _hasOlder = list.isNotEmpty;
+      _hasOlder = _messages.isNotEmpty;
     });
-    DtfApi.markChannelRead(_channelId, settings);
+    await _controller.markRead(_channelId);
   }
 
   Future<void> _loadOlder() async {
     if (_loadingOlder || !_hasOlder || _messages.isEmpty) return;
-    setState(() => _loadingOlder = true);
-    final settings = context.read<SettingsService>();
-    final oldest = _messages.last;
-    final before = '${oldest['dtCreated']}';
-    final list = await DtfApi.getMessages(_channelId, settings, beforeTime: before);
-    if (!mounted) return;
-    final existing = _messages.map((m) => m['id']).toSet();
-    final older = list.reversed.where((m) => !existing.contains(m['id'])).toList();
-    setState(() {
-      _messages.addAll(older);
-      _hasOlder = older.isNotEmpty;
-      _loadingOlder = false;
-    });
+    final beforeCount = _messages.length;
+    await _controller.loadMessages(_channelId);
+    if (mounted) setState(() => _hasOlder = _messages.length > beforeCount);
   }
 
   Future<void> _pollNew() async {
-    if (_loading || _messages.isEmpty) return;
-    final settings = context.read<SettingsService>();
-    final list = await DtfApi.getMessages(_channelId, settings);
-    if (!mounted || list.isEmpty) return;
-    final existing = _messages.map((m) => m['id']).toSet();
-    final fresh = list.reversed.where((m) => !existing.contains(m['id'])).toList();
-    if (fresh.isEmpty) return;
-    setState(() => _messages.insertAll(0, fresh));
-    DtfApi.markChannelRead(_channelId, settings);
+    if (_loading) return;
+    await _controller.loadMessages(_channelId, refresh: true);
+    await _controller.markRead(_channelId);
   }
 
   Future<void> _send() async {
     final text = _ctrl.text.trim();
     if (text.isEmpty || _sending) return;
-    final settings = context.read<SettingsService>();
-    setState(() => _sending = true);
     final replyId = _replyTo?['id']?.toString();
-    final res = await DtfApi.sendMessage(
-      channelId: _channelId,
-      text: text,
-      replyToId: replyId,
-      settings: settings,
-    );
+    final sent = await _controller.send(_channelId, text, replyToId: replyId);
     if (!mounted) return;
-    if (res.ok) {
+    if (sent) {
       _ctrl.clear();
-      setState(() {
-        _replyTo = null;
-        _sending = false;
-      });
-      await _pollNew(); // pull the just-sent message back with its real id
-      _scroll.animateTo(0,
-          duration: const Duration(milliseconds: 250), curve: Curves.easeOut);
+      setState(() => _replyTo = null);
+      _scroll.animateTo(
+        0,
+        duration: const Duration(milliseconds: 250),
+        curve: Curves.easeOut,
+      );
     } else {
-      setState(() => _sending = false);
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Не отправлено: ${res.error ?? 'ошибка'}')),
+        SnackBar(
+          content: Text(
+            'Не отправлено: ${_controller.failure?.message ?? 'ошибка'}',
+          ),
+        ),
       );
     }
   }
@@ -138,74 +127,86 @@ class _ChatScreenState extends State<ChatScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final pic = widget.channel['pictureData'];
+    final pic = widget.channel.rawJson['pictureData'];
     return Scaffold(
       backgroundColor: AppColors.bgDeep,
       appBar: AppBar(
         titleSpacing: 0,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back),
+          icon: Icon(Icons.arrow_back),
           onPressed: () => Navigator.pop(context),
         ),
-        title: Row(children: [
-          Avatar(
-            uuid: pic?['data']?['uuid'],
-            size: 36,
-            animated: pic?['data']?['type'] == 'gif',
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Text(
-              widget.channel['title'] ?? '',
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+        title: Row(
+          children: [
+            Avatar(
+              uuid: pic?['data']?['uuid'],
+              size: 36,
+              animated: pic?['data']?['type'] == 'gif',
             ),
-          ),
-        ]),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                widget.channel.rawJson['title'] ?? '',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
       body: Column(
         children: [
           Expanded(
             child: _loading
-                ? const Center(child: CircularProgressIndicator())
+                ? Center(child: CircularProgressIndicator())
                 : _messages.isEmpty
-                    ? Center(
-                        child: Text('Нет сообщений',
-                            style: TextStyle(color: AppColors.textMuted)))
-                    : ListView.builder(
-                        controller: _scroll,
-                        reverse: true,
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 10, vertical: 12),
-                        itemCount: _messages.length + (_loadingOlder ? 1 : 0),
-                        itemBuilder: (_, i) {
-                          if (i == _messages.length) {
-                            return const Padding(
-                              padding: EdgeInsets.all(12),
-                              child: Center(
-                                  child: SizedBox(
-                                      width: 22,
-                                      height: 22,
-                                      child: CircularProgressIndicator(
-                                          strokeWidth: 2))),
-                            );
-                          }
-                          final m = _messages[i];
-                          final mine = _isMine(m);
-                          final authorId = m['author']?['id']?.toString();
-                          // Block bottom = newest of a consecutive same-author run.
-                          final isBlockBottom = i == 0 ||
-                              _messages[i - 1]['author']?['id']?.toString() !=
-                                  authorId;
-                          return _MessageBubble(
-                            message: m,
-                            mine: mine,
-                            showAvatar: !mine && isBlockBottom,
-                            onReply: () => setState(() => _replyTo = m),
-                          );
-                        },
-                      ),
+                ? Center(
+                    child: Text(
+                      'Нет сообщений',
+                      style: TextStyle(color: AppColors.textMuted),
+                    ),
+                  )
+                : ListView.builder(
+                    controller: _scroll,
+                    reverse: true,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 12,
+                    ),
+                    itemCount: _messages.length + (_loadingOlder ? 1 : 0),
+                    itemBuilder: (_, i) {
+                      if (i == _messages.length) {
+                        return const Padding(
+                          padding: EdgeInsets.all(12),
+                          child: Center(
+                            child: SizedBox(
+                              width: 22,
+                              height: 22,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            ),
+                          ),
+                        );
+                      }
+                      final m = _messages[i];
+                      final mine = _isMine(m);
+                      final authorId = m['author']?['id']?.toString();
+                      // Block bottom = newest of a consecutive same-author run.
+                      final isBlockBottom =
+                          i == 0 ||
+                          _messages[i - 1]['author']?['id']?.toString() !=
+                              authorId;
+                      return _MessageBubble(
+                        message: m,
+                        mine: mine,
+                        showAvatar: !mine && isBlockBottom,
+                        onReply: () => setState(() => _replyTo = m),
+                      );
+                    },
+                  ),
           ),
           _buildComposer(),
         ],
@@ -229,34 +230,44 @@ class _ChatScreenState extends State<ChatScreen> {
             if (_replyTo != null)
               Padding(
                 padding: const EdgeInsets.only(bottom: 6),
-                child: Row(children: [
-                  Container(width: 3, height: 34, color: accent),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(_replyTo['author']?['title'] ?? '',
+                child: Row(
+                  children: [
+                    Container(width: 3, height: 34, color: accent),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            _replyTo!['author']?['title'] ?? '',
                             style: TextStyle(
-                                color: accent,
-                                fontSize: 12,
-                                fontWeight: FontWeight.w600)),
-                        Text(
-                          (_replyTo['text'] ?? '📷 Вложение').toString(),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                              color: AppColors.textMuted, fontSize: 12),
-                        ),
-                      ],
+                              color: accent,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          Text(
+                            (_replyTo!['text'] ?? '📷 Вложение').toString(),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: AppColors.textMuted,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
-                  IconButton(
-                    icon: Icon(Icons.close,
-                        size: 18, color: AppColors.textMuted),
-                    onPressed: () => setState(() => _replyTo = null),
-                  ),
-                ]),
+                    IconButton(
+                      icon: Icon(
+                        Icons.close,
+                        size: 18,
+                        color: AppColors.textMuted,
+                      ),
+                      onPressed: () => setState(() => _replyTo = null),
+                    ),
+                  ],
+                ),
               ),
             Row(
               crossAxisAlignment: CrossAxisAlignment.end,
@@ -268,9 +279,7 @@ class _ChatScreenState extends State<ChatScreen> {
                     minLines: 1,
                     maxLines: 5,
                     style: TextStyle(color: AppColors.textPrimary),
-                    decoration: const InputDecoration(
-                      hintText: 'Сообщение…',
-                    ),
+                    decoration: const InputDecoration(hintText: 'Сообщение…'),
                   ),
                 ),
                 const SizedBox(width: 6),
@@ -278,9 +287,10 @@ class _ChatScreenState extends State<ChatScreen> {
                     ? const Padding(
                         padding: EdgeInsets.all(12),
                         child: SizedBox(
-                            width: 22,
-                            height: 22,
-                            child: CircularProgressIndicator(strokeWidth: 2)),
+                          width: 22,
+                          height: 22,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        ),
                       )
                     : IconButton(
                         icon: Icon(Icons.send, color: accent),
@@ -325,7 +335,8 @@ class _MessageBubble extends StatelessWidget {
 
     final bubble = Container(
       constraints: BoxConstraints(
-          maxWidth: MediaQuery.of(context).size.width * 0.75),
+        maxWidth: MediaQuery.of(context).size.width * 0.75,
+      ),
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
         color: mine ? accent : AppColors.bgCard,
@@ -347,26 +358,31 @@ class _MessageBubble extends StatelessWidget {
                 color: Colors.black.withValues(alpha: 0.20),
                 borderRadius: BorderRadius.circular(6),
                 border: Border(
-                    left: BorderSide(
-                        color: mine ? Colors.white70 : accent, width: 2)),
+                  left: BorderSide(
+                    color: mine ? Colors.white70 : accent,
+                    width: 2,
+                  ),
+                ),
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(reply['author']?['title'] ?? '',
-                      style: TextStyle(
-                          color: mine ? Colors.white : accent,
-                          fontSize: 11,
-                          fontWeight: FontWeight.w600)),
+                  Text(
+                    reply['author']?['title'] ?? '',
+                    style: TextStyle(
+                      color: mine ? Colors.white : accent,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
                   Text(
                     (reply['text'] ?? '📷 Вложение').toString(),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
-                        color: mine
-                            ? Colors.white70
-                            : AppColors.textMuted,
-                        fontSize: 12),
+                      color: mine ? Colors.white70 : AppColors.textMuted,
+                      fontSize: 12,
+                    ),
                   ),
                 ],
               ),
@@ -378,25 +394,31 @@ class _MessageBubble extends StatelessWidget {
               child: CachedNetworkImage(
                 imageUrl: OsnovaImage(uuid).preview(600),
                 fit: BoxFit.cover,
-                placeholder: (_, __) => Container(
-                    height: 160, color: AppColors.bgElevated),
-                errorWidget: (_, __, ___) => Container(
-                    height: 160, color: AppColors.bgElevated),
+                placeholder: (_, _) =>
+                    Container(height: 160, color: AppColors.bgElevated),
+                errorWidget: (_, _, _) =>
+                    Container(height: 160, color: AppColors.bgElevated),
               ),
             ),
             if (text.isNotEmpty) const SizedBox(height: 6),
           ],
           if (text.isNotEmpty)
-            Text(text,
-                style: TextStyle(
-                    color: mine ? Colors.white : AppColors.textPrimary,
-                    fontSize: 15,
-                    height: 1.3)),
-          const SizedBox(height: 3),
-          Text(_time(),
+            Text(
+              text,
               style: TextStyle(
-                  color: mine ? Colors.white70 : AppColors.textMuted,
-                  fontSize: 10)),
+                color: mine ? Colors.white : AppColors.textPrimary,
+                fontSize: 15,
+                height: 1.3,
+              ),
+            ),
+          const SizedBox(height: 3),
+          Text(
+            _time(),
+            style: TextStyle(
+              color: mine ? Colors.white70 : AppColors.textMuted,
+              fontSize: 10,
+            ),
+          ),
         ],
       ),
     );
@@ -419,10 +441,15 @@ class _MessageBubble extends StatelessWidget {
       ),
       child: Padding(
         padding: EdgeInsets.only(
-            top: 2, bottom: 2, left: mine ? 40 : 0, right: mine ? 0 : 40),
+          top: 2,
+          bottom: 2,
+          left: mine ? 40 : 0,
+          right: mine ? 0 : 40,
+        ),
         child: Row(
-          mainAxisAlignment:
-              mine ? MainAxisAlignment.end : MainAxisAlignment.start,
+          mainAxisAlignment: mine
+              ? MainAxisAlignment.end
+              : MainAxisAlignment.start,
           crossAxisAlignment: CrossAxisAlignment.end,
           children: [
             if (!mine)
@@ -430,11 +457,11 @@ class _MessageBubble extends StatelessWidget {
                 width: 30,
                 child: showAvatar
                     ? Avatar(
-                        uuid: message['author']?['pictureData']?['data']
-                            ?['uuid'],
+                        uuid:
+                            message['author']?['pictureData']?['data']?['uuid'],
                         size: 28,
-                        animated: message['author']?['pictureData']?['data']
-                                ?['type'] ==
+                        animated:
+                            message['author']?['pictureData']?['data']?['type'] ==
                             'gif',
                       )
                     : null,

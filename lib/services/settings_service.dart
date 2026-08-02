@@ -1,308 +1,169 @@
-import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../models/post.dart';
+import 'auth_service.dart';
+import 'current_user_service.dart';
+import 'notification_service.dart';
+import 'preferences_service.dart';
+
+export 'auth_service.dart' show AuthStorageException;
+
+/// Compatibility facade while screens migrate to focused services.
 class SettingsService extends ChangeNotifier {
-  static const _kToken = 'dtf_token';
-  static const _kShowDeleted = 'show_deleted_comments';
-  static const _kAutoCollapse = 'auto_collapse_viewed';
-  static const _kFilterKeywords = 'filter_keywords';
-  static const _kUserNotes = 'user_notes';
-  static const _kViewedPosts = 'viewed_posts';
-  static const _kBatchSize = 'batch_size';
-  static const _kAutoExpandComments = 'auto_expand_comments';
-  static const _kRecentGifs = 'recent_gifs';
-  static const _kAccentColor = 'accent_color';
-  static const _kBgImagePath = 'bg_image_path';
-  static const _kBgBlur = 'bg_blur';
-  static const _kBgDim = 'bg_dim';
-  static const _kBlackTheme = 'black_theme';
-  static const _kReactionUsage = 'reaction_usage';
-  static const _kFavoriteSubsites = 'favorite_subsites';
-  static const _kHideCompanyPosts = 'hide_company_posts';
-  static const _kLightTheme = 'light_theme';
-
-  // Per-theme default accents (Figma). A user-picked accent overrides both.
-  static const _defaultAccent = 0xFF5B82F2;      // dark theme
-  static const _defaultAccentLight = 0xFF6580EC; // light theme
-
-  bool showDeletedComments = true;
-  bool autoCollapseViewed = false;
-  bool autoExpandComments = true;
-  bool blackTheme = false;
-  // Hide posts from company blogs (the black "✓" verified-company mark).
-  bool hideCompanyPosts = false;
-  // Light (white) theme instead of the default dark one.
-  bool lightTheme = false;
-  List<String> filterKeywords = [];
-  Map<int, String> userNotes = {};
-  Set<int> viewedPostIds = {};
-  // Subsite ids the user pinned as favorites in the drawer (starred → top).
-  Set<int> favoriteSubsites = {};
-  // How many times each reaction id has been used, for "most used first"
-  // ordering in the reaction picker.
-  Map<int, int> reactionUsage = {};
-  int batchSize = 20;
-  // Recently used GIFs (each is a stored GiphyGif json map), newest first, max 100.
-  List<Map<String, dynamic>> recentGifs = [];
-  int _accentColor = _defaultAccent;
-  String? _bgImagePath;
-  double _bgBlur = 10.0;
-  double _bgDim = 0.45;
-  String? _token;
-
-  String? get bgImagePath => _bgImagePath;
-  double get bgBlur => _bgBlur;
-  double get bgDim => _bgDim;
-
-  /// The accent in use. When the user hasn't picked one, each theme falls back
-  /// to its own Figma default (dark #5B82F2 / light #6580EC).
-  Color get accentColor {
-    if (_accentColor == _defaultAccent && lightTheme) {
-      return const Color(_defaultAccentLight);
-    }
-    return Color(_accentColor);
+  SettingsService._(
+    this.auth,
+    this.preferences,
+    this.currentUser,
+    this.notifications,
+  ) {
+    auth.addListener(_forwardChange);
+    preferences.addListener(_forwardChange);
+    currentUser.addListener(_forwardChange);
+    notifications.addListener(_forwardChange);
   }
 
-  String? get token => _token;
-  bool get isLoggedIn => _token != null && _token!.isNotEmpty;
+  final AuthService auth;
+  final PreferencesService preferences;
+  final CurrentUserService currentUser;
+  final NotificationService notifications;
 
-  // Unread-notification count for the bell badge. Polled from main.dart (kept
-  // here so any widget can react via Provider without a separate service).
-  int _notificationCount = 0;
-  int get notificationCount => _notificationCount;
-  void setNotificationCount(int n) {
-    if (n == _notificationCount) return;
-    _notificationCount = n;
-    notifyListeners();
+  static Future<SettingsService> load({
+    SecureTokenStorage? secureTokenStorage,
+    LegacyTokenStorage? legacyTokenStorage,
+    SharedPreferences? sharedPreferences,
+    bool? useLegacyTokenStorage,
+  }) async {
+    final prefs = sharedPreferences ?? await SharedPreferences.getInstance();
+    final auth = AuthService(
+      secureTokenStorage ??
+          const FlutterSecureTokenStorage(FlutterSecureStorage()),
+      legacyTokenStorage ?? SharedPreferencesTokenStorage(prefs),
+      useLegacyTokenStorage ?? _useInsecureWebStorage,
+    );
+    final preferences = PreferencesService(prefs)..initialize();
+    await auth.initialize();
+    return SettingsService._(
+      auth,
+      preferences,
+      CurrentUserService(),
+      NotificationService(),
+    );
   }
 
-  // Current user identity, fetched once from subsite/me (via main.dart). Used
-  // to decide comment ownership and the edit window (Plus = 1h, else 1min).
-  int? _myUserId;
-  bool _myIsPlus = false;
-  int? get myUserId => _myUserId;
-  bool get myIsPlus => _myIsPlus;
-  void setCurrentUser(int? id, bool isPlus) {
-    if (id == _myUserId && isPlus == _myIsPlus) return;
-    _myUserId = id;
-    _myIsPlus = isPlus;
-    notifyListeners();
+  /// Web Crypto is unavailable on a regular HTTP origin. Keep the legacy
+  /// SharedPreferences behaviour only for that explicitly unsupported case.
+  static bool get _useInsecureWebStorage {
+    if (!kIsWeb || Uri.base.scheme != 'http') return false;
+    final host = Uri.base.host.toLowerCase();
+    return host != 'localhost' && host != '127.0.0.1' && host != '::1';
   }
 
-  static Future<SettingsService> load() async {
-    final svc = SettingsService();
-    await svc._init();
-    return svc;
-  }
+  String? get token => auth.token;
+  bool get isLoggedIn => auth.isLoggedIn;
+  String? get authStorageError => auth.storageError;
 
-  Future<void> _init() async {
-    final prefs = await SharedPreferences.getInstance();
-    _token = prefs.getString(_kToken);
-    showDeletedComments = prefs.getBool(_kShowDeleted) ?? true;
-    autoCollapseViewed = prefs.getBool(_kAutoCollapse) ?? false;
-    autoExpandComments = prefs.getBool(_kAutoExpandComments) ?? true;
-    batchSize = prefs.getInt(_kBatchSize) ?? 20;
+  bool get showDeletedComments => preferences.showDeletedComments;
+  bool get autoCollapseViewed => preferences.autoCollapseViewed;
+  bool get autoExpandComments => preferences.autoExpandComments;
+  bool get blackTheme => preferences.blackTheme;
+  bool get lightTheme => preferences.lightTheme;
+  bool get hideCompanyPosts => preferences.hideCompanyPosts;
+  List<String> get filterKeywords => preferences.filterKeywords;
+  Map<int, String> get userNotes => preferences.userNotes;
+  Set<int> get viewedPostIds => preferences.viewedPostIds;
+  Set<int> get favoriteSubsites => preferences.favoriteSubsites;
+  Map<int, int> get reactionUsage => preferences.reactionUsage;
+  int get batchSize => preferences.batchSize;
+  List<Map<String, dynamic>> get recentGifs => preferences.recentGifs;
+  String? get bgImagePath => preferences.bgImagePath;
+  double get bgBlur => preferences.bgBlur;
+  double get bgDim => preferences.bgDim;
+  Color get accentColor => preferences.accentColor;
 
-    final kwJson = prefs.getString(_kFilterKeywords);
-    if (kwJson != null) filterKeywords = List<String>.from(jsonDecode(kwJson));
+  int get notificationCount => notifications.unreadCount;
+  int? get myUserId => currentUser.userId;
+  bool get myIsPlus => currentUser.isPlus;
 
-    final notesJson = prefs.getString(_kUserNotes);
-    if (notesJson != null) {
-      final raw = jsonDecode(notesJson) as Map;
-      userNotes = raw.map((k, v) => MapEntry(int.parse(k.toString()), v.toString()));
-    }
-
-    final viewedJson = prefs.getString(_kViewedPosts);
-    if (viewedJson != null) {
-      viewedPostIds = Set<int>.from((jsonDecode(viewedJson) as List).map((e) => int.parse(e.toString())));
-    }
-
-    final gifsJson = prefs.getString(_kRecentGifs);
-    if (gifsJson != null) {
-      recentGifs = (jsonDecode(gifsJson) as List).map((e) => Map<String, dynamic>.from(e)).toList();
-    }
-
-    final usageJson = prefs.getString(_kReactionUsage);
-    if (usageJson != null) {
-      final raw = jsonDecode(usageJson) as Map;
-      reactionUsage = raw.map(
-          (k, v) => MapEntry(int.parse(k.toString()), (v as num).toInt()));
-    }
-
-    final favJson = prefs.getString(_kFavoriteSubsites);
-    if (favJson != null) {
-      favoriteSubsites = Set<int>.from(
-          (jsonDecode(favJson) as List).map((e) => int.parse(e.toString())));
-    }
-
-    _accentColor = prefs.getInt(_kAccentColor) ?? _defaultAccent;
-    _bgImagePath = prefs.getString(_kBgImagePath);
-    _bgBlur = prefs.getDouble(_kBgBlur) ?? 10.0;
-    _bgDim = prefs.getDouble(_kBgDim) ?? 0.45;
-    blackTheme = prefs.getBool(_kBlackTheme) ?? false;
-    hideCompanyPosts = prefs.getBool(_kHideCompanyPosts) ?? false;
-    lightTheme = prefs.getBool(_kLightTheme) ?? false;
-  }
-
-  Future<void> setBlackTheme(bool v) async {
-    blackTheme = v;
-    await _prefs((p) => p.setBool(_kBlackTheme, v));
-  }
-
-  Future<void> setHideCompanyPosts(bool v) async {
-    hideCompanyPosts = v;
-    await _prefs((p) => p.setBool(_kHideCompanyPosts, v));
-  }
-
-  Future<void> setLightTheme(bool v) async {
-    lightTheme = v;
-    await _prefs((p) => p.setBool(_kLightTheme, v));
-  }
-
-  /// Records that [reactionId] was used, so the picker can surface the user's
-  /// favourites first. Fire-and-forget — no notifyListeners (nothing visible
-  /// needs to rebuild immediately; the picker re-reads on next open).
-  Future<void> recordReactionUse(int reactionId) async {
-    reactionUsage[reactionId] = (reactionUsage[reactionId] ?? 0) + 1;
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(
-        _kReactionUsage,
-        jsonEncode(
-            reactionUsage.map((k, v) => MapEntry(k.toString(), v))));
-  }
-
-  Future<void> setAccentColor(Color c) async {
-    _accentColor = c.toARGB32();
-    await _prefs((p) => p.setInt(_kAccentColor, _accentColor));
-  }
-
-  Future<void> resetAccentColor() async {
-    _accentColor = _defaultAccent;
-    await _prefs((p) => p.setInt(_kAccentColor, _accentColor));
-  }
-
-  Future<void> setBgImagePath(String? path) async {
-    _bgImagePath = path;
-    final prefs = await SharedPreferences.getInstance();
-    if (path == null) {
-      await prefs.remove(_kBgImagePath);
-    } else {
-      await prefs.setString(_kBgImagePath, path);
-    }
-    notifyListeners();
-  }
-
-  Future<void> setBgBlur(double v) async {
-    _bgBlur = v;
-    await _prefs((p) => p.setDouble(_kBgBlur, v));
-  }
-
-  Future<void> setBgDim(double v) async {
-    _bgDim = v;
-    await _prefs((p) => p.setDouble(_kBgDim, v));
-  }
-
-  Future<void> addRecentGif(Map<String, dynamic> gif) async {
-    final id = gif['id'];
-    // Move to front, dedupe, cap at 100.
-    recentGifs = [gif, ...recentGifs.where((g) => g['id'] != id)];
-    if (recentGifs.length > 100) recentGifs = recentGifs.sublist(0, 100);
-    await _prefs((p) => p.setString(_kRecentGifs, jsonEncode(recentGifs)));
-  }
-
-  Future<void> _prefs(Future<void> Function(SharedPreferences) fn) async {
-    final prefs = await SharedPreferences.getInstance();
-    await fn(prefs);
-    notifyListeners();
-  }
-
-  Future<void> saveToken(String token) async {
-    _token = token;
-    await _prefs((p) => p.setString(_kToken, token));
-  }
+  Future<void> saveToken(String token) => auth.saveToken(token);
 
   Future<void> clearToken() async {
-    _token = null;
-    await _prefs((p) => p.remove(_kToken));
+    await auth.clearToken();
+    currentUser.clear();
+    notifications.clear();
   }
 
-  Future<void> setShowDeletedComments(bool v) async {
-    showDeletedComments = v;
-    await _prefs((p) => p.setBool(_kShowDeleted, v));
-  }
+  void setNotificationCount(int value) =>
+      notifications.updateUnreadCount(value);
 
-  Future<void> setAutoCollapseViewed(bool v) async {
-    autoCollapseViewed = v;
-    await _prefs((p) => p.setBool(_kAutoCollapse, v));
-  }
+  void setCurrentUser(int? id, bool isPlus) => currentUser.update(id, isPlus);
 
-  Future<void> setAutoExpandComments(bool v) async {
-    autoExpandComments = v;
-    await _prefs((p) => p.setBool(_kAutoExpandComments, v));
-  }
+  Future<void> setBlackTheme(bool value) => preferences.setBlackTheme(value);
 
-  Future<void> setBatchSize(int v) async {
-    batchSize = v;
-    await _prefs((p) => p.setInt(_kBatchSize, v));
-  }
+  Future<void> setLightTheme(bool value) => preferences.setLightTheme(value);
 
-  Future<void> addFilterKeyword(String kw) async {
-    kw = kw.trim().toLowerCase();
-    if (kw.isEmpty || filterKeywords.contains(kw)) return;
-    filterKeywords = [...filterKeywords, kw];
-    await _prefs((p) => p.setString(_kFilterKeywords, jsonEncode(filterKeywords)));
-  }
+  Future<void> setHideCompanyPosts(bool value) =>
+      preferences.setHideCompanyPosts(value);
 
-  Future<void> removeFilterKeyword(String kw) async {
-    filterKeywords = filterKeywords.where((k) => k != kw).toList();
-    await _prefs((p) => p.setString(_kFilterKeywords, jsonEncode(filterKeywords)));
-  }
+  Future<void> recordReactionUse(int reactionId) =>
+      preferences.recordReactionUse(reactionId);
 
-  Future<void> setUserNote(int userId, String note) async {
-    if (note.trim().isEmpty) {
-      userNotes = Map.from(userNotes)..remove(userId);
-    } else {
-      userNotes = {...userNotes, userId: note.trim()};
-    }
-    final toSave = userNotes.map((k, v) => MapEntry(k.toString(), v));
-    await _prefs((p) => p.setString(_kUserNotes, jsonEncode(toSave)));
-  }
+  Future<void> setAccentColor(Color color) => preferences.setAccentColor(color);
 
-  bool isFavoriteSubsite(int id) => favoriteSubsites.contains(id);
+  Future<void> resetAccentColor() => preferences.resetAccentColor();
 
-  Future<void> toggleFavoriteSubsite(int id) async {
-    if (favoriteSubsites.contains(id)) {
-      favoriteSubsites = {...favoriteSubsites}..remove(id);
-    } else {
-      favoriteSubsites = {...favoriteSubsites, id};
-    }
-    await _prefs(
-        (p) => p.setString(_kFavoriteSubsites, jsonEncode(favoriteSubsites.toList())));
-  }
+  Future<void> setBgImagePath(String? path) => preferences.setBgImagePath(path);
 
-  Future<void> markViewed(int postId) async {
-    if (viewedPostIds.contains(postId)) return;
-    viewedPostIds = {...viewedPostIds, postId};
-    if (viewedPostIds.length > 1000) {
-      viewedPostIds = viewedPostIds.skip(500).toSet();
-    }
-    await _prefs((p) => p.setString(_kViewedPosts, jsonEncode(viewedPostIds.toList())));
-  }
+  Future<void> setBgBlur(double value) => preferences.setBgBlur(value);
 
-  bool isFiltered(dynamic post) {
-    // Hide company-blog posts (black check-mark) when the user opted out.
-    if (hideCompanyPosts && post['author']?['isCompany'] == true) return true;
-    if (filterKeywords.isEmpty) return false;
-    final title = (post['title'] ?? '').toString().toLowerCase();
-    final blocks = post['blocks'] as List? ?? [];
-    final text = blocks
-        .where((b) => b['type'] == 'text')
-        .map((b) => (b['data']?['text'] ?? '').toString())
-        .join(' ')
-        .toLowerCase()
-        .replaceAll(RegExp(r'<[^>]*>'), '');
-    final content = '$title $text';
-    return filterKeywords.any((kw) => content.contains(kw));
+  Future<void> setBgDim(double value) => preferences.setBgDim(value);
+
+  Future<void> addRecentGif(Map<String, dynamic> gif) =>
+      preferences.addRecentGif(gif);
+
+  Future<void> setShowDeletedComments(bool value) =>
+      preferences.setShowDeletedComments(value);
+
+  Future<void> setAutoCollapseViewed(bool value) =>
+      preferences.setAutoCollapseViewed(value);
+
+  Future<void> setAutoExpandComments(bool value) =>
+      preferences.setAutoExpandComments(value);
+
+  Future<void> setBatchSize(int value) => preferences.setBatchSize(value);
+
+  Future<void> addFilterKeyword(String keyword) =>
+      preferences.addFilterKeyword(keyword);
+
+  Future<void> removeFilterKeyword(String keyword) =>
+      preferences.removeFilterKeyword(keyword);
+
+  Future<void> setUserNote(int userId, String note) =>
+      preferences.setUserNote(userId, note);
+
+  bool isFavoriteSubsite(int id) => preferences.isFavoriteSubsite(id);
+
+  Future<void> toggleFavoriteSubsite(int id) =>
+      preferences.toggleFavoriteSubsite(id);
+
+  Future<void> markViewed(int postId) => preferences.markViewed(postId);
+
+  bool isFiltered(Post post) => preferences.isFiltered(post);
+
+  void _forwardChange() => notifyListeners();
+
+  @override
+  void dispose() {
+    auth.removeListener(_forwardChange);
+    preferences.removeListener(_forwardChange);
+    currentUser.removeListener(_forwardChange);
+    notifications.removeListener(_forwardChange);
+    auth.dispose();
+    preferences.dispose();
+    currentUser.dispose();
+    notifications.dispose();
+    super.dispose();
   }
 }

@@ -1,6 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../api/dtf_api.dart';
+import '../core/api/result.dart';
+import '../features/search/data/search_repository.dart';
+import '../features/search/presentation/search_controller.dart' as feature;
+import '../models/comment.dart';
+import '../models/post.dart';
+import '../models/subsite.dart';
 import '../services/settings_service.dart';
 import '../theme.dart';
 import '../widgets/avatar.dart';
@@ -18,57 +23,49 @@ class SearchScreen extends StatefulWidget {
 
 class _SearchScreenState extends State<SearchScreen> {
   final _ctrl = TextEditingController();
-  List<dynamic> _results = [];
-  bool _loading = false;
-  String _lastQuery = '';
-
-  // Landing content (shown when the query is empty).
-  List<dynamic> _topBlogs = [];
-  List<dynamic> _topComments = [];
-  bool _loadingLanding = true;
+  late final feature.SearchController _controller;
+  List<Post> get _results => _controller.state.posts;
+  bool get _loading => _controller.state.isSearching;
+  String get _lastQuery => _controller.state.query;
+  List<Subsite> get _topBlogs => _controller.state.blogs;
+  List<Comment> get _topComments => _controller.state.comments.take(3).toList();
+  bool get _loadingLanding => _controller.state.isLandingLoading;
   bool _showAllBlogs = false;
 
   @override
   void initState() {
     super.initState();
-    _loadLanding();
+    _controller = feature.SearchController(context.read<SearchRepository>())
+      ..addListener(_onChanged)
+      ..loadLanding();
   }
 
-  Future<void> _loadLanding() async {
-    final settings = context.read<SettingsService>();
-    final results = await Future.wait([
-      DtfApi.getTopBlogs(settings),
-      DtfApi.getPopularComments(settings),
-    ]);
-    if (!mounted) return;
-    setState(() {
-      _topBlogs = results[0];
-      _topComments = results[1].take(3).toList();
-      _loadingLanding = false;
-    });
+  @override
+  void dispose() {
+    _controller
+      ..removeListener(_onChanged)
+      ..dispose();
+    _ctrl.dispose();
+    super.dispose();
   }
 
-  Future<void> _search(String query) async {
-    query = query.trim();
-    if (query.isEmpty || query == _lastQuery) return;
-    _lastQuery = query;
-    setState(() { _loading = true; _results = []; });
-    final settings = context.read<SettingsService>();
-    final results = await DtfApi.searchEntries(query, settings);
-    if (!mounted) return;
-    setState(() { _results = results; _loading = false; });
+  void _onChanged() {
+    if (mounted) setState(() {});
   }
 
-  void _openComment(dynamic comment) {
-    final postId = comment['entry']?['id'] as int?;
+  Future<void> _search(String query) => _controller.search(query);
+
+  void _openComment(Comment comment) {
+    final data = comment.rawJson;
+    final postId = data['entry']?['id'] as int?;
     if (postId == null) return;
     Navigator.push(
       context,
       MaterialPageRoute(
         builder: (_) => PostScreen(
           postId: postId,
-          title: comment['entry']?['title'] ?? '',
-          scrollToCommentId: comment['id'] as int?,
+          title: data['entry']?['title'] ?? '',
+          scrollToCommentId: comment.id,
         ),
       ),
     );
@@ -96,13 +93,13 @@ class _SearchScreenState extends State<SearchScreen> {
                   decoration: InputDecoration(
                     hintText: 'Поиск по DTF',
                     hintStyle: const TextStyle(color: Colors.grey),
-                    prefixIcon: const Icon(Icons.search, color: Colors.grey),
+                    prefixIcon: Icon(Icons.search, color: Colors.grey),
                     suffixIcon: _ctrl.text.isNotEmpty
                         ? IconButton(
-                            icon: const Icon(Icons.clear, color: Colors.grey),
+                            icon: Icon(Icons.clear, color: Colors.grey),
                             onPressed: () {
                               _ctrl.clear();
-                              setState(() { _results = []; _lastQuery = ''; });
+                              _controller.clear();
                             },
                           )
                         : null,
@@ -126,8 +123,10 @@ class _SearchScreenState extends State<SearchScreen> {
     if (_lastQuery.isNotEmpty) {
       if (_results.isEmpty) {
         return const Center(
-          child: Text('Ничего не найдено',
-              style: TextStyle(color: Colors.grey)),
+          child: Text(
+            'Ничего не найдено',
+            style: TextStyle(color: Colors.grey),
+          ),
         );
       }
       return ListView.builder(
@@ -135,13 +134,14 @@ class _SearchScreenState extends State<SearchScreen> {
         itemBuilder: (_, i) {
           final post = _results[i];
           return PostCard(
+            key: ValueKey(post.id),
             post: post,
             onTap: () => Navigator.push(
               context,
               MaterialPageRoute(
                 builder: (_) => PostScreen(
-                  postId: post['id'] as int,
-                  title: post['title'] ?? '',
+                  postId: post.id,
+                  title: post.title,
                   postData: post,
                 ),
               ),
@@ -164,7 +164,12 @@ class _SearchScreenState extends State<SearchScreen> {
       children: [
         if (_topBlogs.isNotEmpty) ...[
           const _SectionHeader('Топ блогов'),
-          ...blogs.map((b) => _BlogTile(blog: b)),
+          ...blogs.map(
+            (blog) => _BlogTile(
+              blog: blog,
+              onSetSubscription: _controller.setSubscription,
+            ),
+          ),
           if (_topBlogs.length > 3)
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
@@ -177,10 +182,10 @@ class _SearchScreenState extends State<SearchScreen> {
         if (_topComments.isNotEmpty) ...[
           const SizedBox(height: 8),
           const _SectionHeader('Популярные комментарии'),
-          ..._topComments.map((c) => _CommentPreviewTile(
-                comment: c,
-                onTap: () => _openComment(c),
-              )),
+          ..._topComments.map(
+            (c) =>
+                _CommentPreviewTile(comment: c, onTap: () => _openComment(c)),
+          ),
         ],
       ],
     );
@@ -195,11 +200,14 @@ class _SectionHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 14, 16, 8),
-      child: Text(title,
-          style: TextStyle(
-              color: AppColors.textPrimary,
-              fontSize: 17,
-              fontWeight: FontWeight.w800)),
+      child: Text(
+        title,
+        style: TextStyle(
+          color: AppColors.textPrimary,
+          fontSize: 17,
+          fontWeight: FontWeight.w800,
+        ),
+      ),
     );
   }
 }
@@ -225,12 +233,20 @@ class _ExpandButton extends StatelessWidget {
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Text(expanded ? 'Свернуть' : 'Раскрыть топ',
-                style: TextStyle(
-                    color: accent, fontSize: 14, fontWeight: FontWeight.w600)),
+            Text(
+              expanded ? 'Свернуть' : 'Раскрыть топ',
+              style: TextStyle(
+                color: accent,
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
             const SizedBox(width: 4),
-            Icon(expanded ? Icons.expand_less : Icons.expand_more,
-                color: accent, size: 20),
+            Icon(
+              expanded ? Icons.expand_less : Icons.expand_more,
+              color: accent,
+              size: 20,
+            ),
           ],
         ),
       ),
@@ -247,40 +263,47 @@ String _fmtCount(dynamic n) {
 }
 
 class _BlogTile extends StatefulWidget {
-  final dynamic blog;
-  const _BlogTile({required this.blog});
+  final Subsite blog;
+  final Future<Result<void>> Function(int subsiteId, {required bool value})
+  onSetSubscription;
+
+  const _BlogTile({required this.blog, required this.onSetSubscription});
 
   @override
   State<_BlogTile> createState() => _BlogTileState();
 }
 
 class _BlogTileState extends State<_BlogTile> {
-  late bool _subscribed = widget.blog['isSubscribed'] == true;
+  late bool _subscribed = widget.blog.rawJson['isSubscribed'] == true;
   bool _busy = false;
 
   Future<void> _toggle() async {
     final settings = context.read<SettingsService>();
     if (!settings.isLoggedIn) {
-      ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Войди в аккаунт')));
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Войди в аккаунт')));
       return;
     }
-    final id = widget.blog['id'] as int?;
+    final id = widget.blog.id;
     if (id == null || _busy) return;
     final target = !_subscribed;
-    setState(() { _subscribed = target; _busy = true; });
-    final ok = await DtfApi.toggleSubscription(id, target, settings);
+    setState(() {
+      _subscribed = target;
+      _busy = true;
+    });
+    final result = await widget.onSetSubscription(id, value: target);
     if (!mounted) return;
     setState(() {
       _busy = false;
-      if (!ok) _subscribed = !target; // revert on failure
+      if (result is Failure<void>) _subscribed = !target;
     });
   }
 
   @override
   Widget build(BuildContext context) {
     final accent = Theme.of(context).colorScheme.primary;
-    final b = widget.blog;
+    final b = widget.blog.rawJson;
     final subs = b['counters']?['subscribers'] ?? 0;
     final rating = b['count_stats_7d'];
 
@@ -302,28 +325,45 @@ class _BlogTileState extends State<_BlogTile> {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
-                        color: AppColors.textPrimary,
-                        fontSize: 15,
-                        fontWeight: FontWeight.w600),
+                      color: AppColors.textPrimary,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
                   const SizedBox(height: 3),
-                  Row(children: [
-                    Icon(Icons.people_outline,
-                        size: 13, color: AppColors.textMuted),
-                    const SizedBox(width: 3),
-                    Text(_fmtCount(subs),
-                        style: TextStyle(
-                            color: AppColors.textSecondary, fontSize: 12)),
-                    if (rating != null) ...[
-                      const SizedBox(width: 10),
-                      Icon(Icons.trending_up,
-                          size: 13, color: AppColors.textMuted),
+                  Row(
+                    children: [
+                      Icon(
+                        Icons.people_outline,
+                        size: 13,
+                        color: AppColors.textMuted,
+                      ),
                       const SizedBox(width: 3),
-                      Text(_fmtCount(rating),
+                      Text(
+                        _fmtCount(subs),
+                        style: TextStyle(
+                          color: AppColors.textSecondary,
+                          fontSize: 12,
+                        ),
+                      ),
+                      if (rating != null) ...[
+                        const SizedBox(width: 10),
+                        Icon(
+                          Icons.trending_up,
+                          size: 13,
+                          color: AppColors.textMuted,
+                        ),
+                        const SizedBox(width: 3),
+                        Text(
+                          _fmtCount(rating),
                           style: TextStyle(
-                              color: AppColors.textSecondary, fontSize: 12)),
+                            color: AppColors.textSecondary,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ],
                     ],
-                  ]),
+                  ),
                 ],
               ),
             ),
@@ -332,8 +372,10 @@ class _BlogTileState extends State<_BlogTile> {
               onTap: _toggle,
               child: AnimatedContainer(
                 duration: const Duration(milliseconds: 200),
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 7,
+                ),
                 decoration: BoxDecoration(
                   color: _subscribed
                       ? AppColors.bgElevated
@@ -362,17 +404,17 @@ class _BlogTileState extends State<_BlogTile> {
 }
 
 class _CommentPreviewTile extends StatelessWidget {
-  final dynamic comment;
+  final Comment comment;
   final VoidCallback onTap;
   const _CommentPreviewTile({required this.comment, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
-    final author = comment['author'];
-    final text =
-        (comment['text'] ?? '').toString().replaceAll(RegExp(r'<[^>]*>'), '').trim();
-    final postTitle = comment['entry']?['title'] ?? '';
-    final likes = comment['likes']?['summ'] ?? comment['likes']?['count'];
+    final data = comment.rawJson;
+    final author = data['author'];
+    final text = comment.text.replaceAll(RegExp(r'<[^>]*>'), '').trim();
+    final postTitle = data['entry']?['title'] ?? '';
+    final likes = data['likes']?['summ'] ?? data['likes']?['count'];
 
     return GestureDetector(
       onTap: onTap,
@@ -387,29 +429,39 @@ class _CommentPreviewTile extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(children: [
-              Avatar.fromData(author?['avatar'], size: 28),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  author?['name'] ?? '',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
+            Row(
+              children: [
+                Avatar.fromData(author?['avatar'], size: 28),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    author?['name'] ?? '',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
                       color: AppColors.textPrimary,
                       fontSize: 13,
-                      fontWeight: FontWeight.w600),
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
                 ),
-              ),
-              if (likes != null) ...[
-                Icon(Icons.favorite,
-                    size: 13, color: AppColors.textMuted),
-                const SizedBox(width: 3),
-                Text('$likes',
+                if (likes != null) ...[
+                  Icon(
+                    Icons.favorite,
+                    size: 13,
+                    color: AppColors.textMuted,
+                  ),
+                  const SizedBox(width: 3),
+                  Text(
+                    '$likes',
                     style: TextStyle(
-                        color: AppColors.textSecondary, fontSize: 12)),
+                      color: AppColors.textSecondary,
+                      fontSize: 12,
+                    ),
+                  ),
+                ],
               ],
-            ]),
+            ),
             if (text.isNotEmpty) ...[
               const SizedBox(height: 8),
               Text(
@@ -417,27 +469,35 @@ class _CommentPreviewTile extends StatelessWidget {
                 maxLines: 3,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
-                    color: AppColors.textSecondary,
-                    fontSize: 13,
-                    height: 1.35),
+                  color: AppColors.textSecondary,
+                  fontSize: 13,
+                  height: 1.35,
+                ),
               ),
             ],
             if (postTitle.toString().isNotEmpty) ...[
               const SizedBox(height: 8),
-              Row(children: [
-                Icon(Icons.article_outlined,
-                    size: 12, color: AppColors.textMuted),
-                const SizedBox(width: 4),
-                Expanded(
-                  child: Text(
-                    postTitle,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                        color: AppColors.textMuted, fontSize: 11),
+              Row(
+                children: [
+                  Icon(
+                    Icons.article_outlined,
+                    size: 12,
+                    color: AppColors.textMuted,
                   ),
-                ),
-              ]),
+                  const SizedBox(width: 4),
+                  Expanded(
+                    child: Text(
+                      postTitle,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: AppColors.textMuted,
+                        fontSize: 11,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
             ],
           ],
         ),

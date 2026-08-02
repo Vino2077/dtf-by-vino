@@ -2,7 +2,10 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
-import '../api/dtf_api.dart';
+import '../features/notifications/data/notifications_repository.dart';
+import '../features/notifications/presentation/notifications_controller.dart';
+import '../models/notification.dart';
+import '../services/notification_service.dart';
 import '../services/settings_service.dart';
 import '../theme.dart';
 import '../widgets/avatar.dart';
@@ -18,44 +21,36 @@ class NotificationsScreen extends StatefulWidget {
 }
 
 class _NotificationsScreenState extends State<NotificationsScreen> {
-  List<dynamic> _items = [];
-  bool _loading = true;
-  bool _loadingMore = false;
-  int? _lastId;
+  late final NotificationsController _controller;
+  List<AppNotification> get _items => _controller.items;
+  bool get _loading => _controller.isLoading;
+  bool get _loadingMore => _controller.isLoadingMore;
 
   @override
   void initState() {
     super.initState();
-    _load();
+    _controller = NotificationsController(
+      context.read<NotificationsRepository>(),
+      context.read<NotificationService>(),
+    )..addListener(_onChanged);
+    _controller.load(refresh: true);
   }
 
-  Future<void> _load() async {
-    final settings = context.read<SettingsService>();
-    if (!settings.isLoggedIn) {
-      setState(() => _loading = false);
-      return;
-    }
-    final items = await DtfApi.getNotifications(settings);
-    if (!mounted) return;
-    setState(() {
-      _items = items;
-      _lastId = items.isNotEmpty ? items.last['id'] as int? : null;
-      _loading = false;
-    });
+  void _onChanged() {
+    if (mounted) setState(() {});
   }
 
-  Future<void> _loadMore() async {
-    if (_loadingMore || _lastId == null) return;
-    setState(() => _loadingMore = true);
-    final settings = context.read<SettingsService>();
-    final more = await DtfApi.getNotifications(settings, lastId: _lastId);
-    if (!mounted) return;
-    setState(() {
-      _items.addAll(more);
-      _lastId = more.isNotEmpty ? more.last['id'] as int? : null;
-      _loadingMore = false;
-    });
+  @override
+  void dispose() {
+    _controller
+      ..removeListener(_onChanged)
+      ..dispose();
+    super.dispose();
   }
+
+  Future<void> _load() => _controller.load(refresh: true);
+
+  Future<void> _loadMore() => _controller.load();
 
   @override
   Widget build(BuildContext context) {
@@ -65,8 +60,10 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
       return Scaffold(
         backgroundColor: Colors.transparent,
         body: Center(
-          child: Text('Войди в аккаунт, чтобы видеть уведомления',
-              style: TextStyle(color: AppColors.textSecondary)),
+          child: Text(
+            'Войди в аккаунт, чтобы видеть уведомления',
+            style: TextStyle(color: AppColors.textSecondary),
+          ),
         ),
       );
     }
@@ -78,55 +75,51 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
         child: _loading
             ? const NotificationsSkeleton()
             : _items.isEmpty
-                ? Center(
-                    child: Text('Нет уведомлений',
-                        style: TextStyle(color: AppColors.textSecondary)))
-                : RefreshIndicator(
-                    onRefresh: () async {
-                      setState(() {
-                        _loading = true;
-                        _lastId = null;
-                      });
-                      await _load();
+            ? Center(
+                child: Text(
+                  'Нет уведомлений',
+                  style: TextStyle(color: AppColors.textSecondary),
+                ),
+              )
+            : RefreshIndicator(
+                onRefresh: _load,
+                child: NotificationListener<ScrollNotification>(
+                  onNotification: (n) {
+                    if (n.metrics.pixels > n.metrics.maxScrollExtent - 400) {
+                      _loadMore();
+                    }
+                    return false;
+                  },
+                  child: Builder(
+                    builder: (ctx) {
+                      final bottomPad = MediaQuery.of(ctx).padding.bottom + 86;
+                      return ListView.builder(
+                        padding: EdgeInsets.only(bottom: bottomPad),
+                        itemCount: _items.length + (_loadingMore ? 1 : 0),
+                        itemBuilder: (_, i) {
+                          if (i == _items.length) {
+                            return const Center(
+                              child: Padding(
+                                padding: EdgeInsets.all(16),
+                                child: CircularProgressIndicator(),
+                              ),
+                            );
+                          }
+                          return _NotificationTile(notification: _items[i]);
+                        },
+                      );
                     },
-                    child: NotificationListener<ScrollNotification>(
-                      onNotification: (n) {
-                        if (n.metrics.pixels >
-                            n.metrics.maxScrollExtent - 400) {
-                          _loadMore();
-                        }
-                        return false;
-                      },
-                      child: Builder(builder: (ctx) {
-                        final bottomPad =
-                            MediaQuery.of(ctx).padding.bottom + 86;
-                        return ListView.builder(
-                          padding: EdgeInsets.only(bottom: bottomPad),
-                          itemCount:
-                              _items.length + (_loadingMore ? 1 : 0),
-                          itemBuilder: (_, i) {
-                            if (i == _items.length) {
-                              return const Center(
-                                child: Padding(
-                                  padding: EdgeInsets.all(16),
-                                  child: CircularProgressIndicator(),
-                                ),
-                              );
-                            }
-                            return _NotificationTile(item: _items[i]);
-                          },
-                        );
-                      }),
-                    ),
                   ),
+                ),
+              ),
       ),
     );
   }
 }
 
 class _NotificationTile extends StatelessWidget {
-  final dynamic item;
-  const _NotificationTile({required this.item});
+  final AppNotification notification;
+  const _NotificationTile({required this.notification});
 
   String _timeAgo(dynamic ts) {
     if (ts == null) return '';
@@ -138,14 +131,19 @@ class _NotificationTile extends StatelessWidget {
   }
 
   // The payload may sit on the item directly or under `data`.
+  Map<String, dynamic> get item => notification.rawJson;
   dynamic get _d => item['data'] is Map ? item['data'] : item;
 
   String get _type => (item['type'] ?? _d['type'] ?? '').toString();
 
   IconData _iconData() {
     final type = _type.toLowerCase();
-    if (type.contains('comment') || type.contains('reply')) return Icons.chat_bubble;
-    if (type.contains('like') || type.contains('vote') || type.contains('react')) {
+    if (type.contains('comment') || type.contains('reply')) {
+      return Icons.chat_bubble;
+    }
+    if (type.contains('like') ||
+        type.contains('vote') ||
+        type.contains('react')) {
       return Icons.favorite;
     }
     if (type.contains('mention')) return Icons.alternate_email;
@@ -157,7 +155,9 @@ class _NotificationTile extends StatelessWidget {
   // blue = comment/reply, red = reaction, green = subscription.
   Color _badgeColor() {
     final type = _type.toLowerCase();
-    if (type.contains('like') || type.contains('vote') || type.contains('react')) {
+    if (type.contains('like') ||
+        type.contains('vote') ||
+        type.contains('react')) {
       return AppColors.danger; // red
     }
     if (type.contains('subscrib')) return AppColors.online; // green
@@ -176,6 +176,7 @@ class _NotificationTile extends StatelessWidget {
         if (best == null || s.length > best!.length) best = s;
       }
     }
+
     if (node is String) {
       consider(node);
     } else if (node is Map) {
@@ -201,7 +202,11 @@ class _NotificationTile extends StatelessWidget {
     final type = _type.toLowerCase();
     if (type.contains('reply')) return 'ответил(а) вам';
     if (type.contains('comment')) return 'оставил(а) комментарий';
-    if (type.contains('like') || type.contains('react') || type.contains('vote')) return 'оценил(а)';
+    if (type.contains('like') ||
+        type.contains('react') ||
+        type.contains('vote')) {
+      return 'оценил(а)';
+    }
     if (type.contains('subscrib')) return 'подписался(ась) на вас';
     if (type.contains('mention')) return 'упомянул(а) вас';
     return 'Новое уведомление';
@@ -242,7 +247,10 @@ class _NotificationTile extends StatelessWidget {
     }
 
     if (html != null) {
-      final hrefRe = RegExp(r'''href\s*=\s*["']([^"']+)["']''', caseSensitive: false);
+      final hrefRe = RegExp(
+        r'''href\s*=\s*["']([^"']+)["']''',
+        caseSensitive: false,
+      );
       for (final m in hrefRe.allMatches(html)) {
         final uri = Uri.tryParse(m.group(1)!);
         if (uri == null || uri.pathSegments.isEmpty) continue;
@@ -284,12 +292,22 @@ class _NotificationTile extends StatelessWidget {
     // Structured fields fallback
     final d = _d;
     postId ??= _firstInt([
-      d['post_id'], d['content_id'], d['contentId'], d['postId'], d['id'],
-      d['content']?['id'], d['entry']?['id'], d['post']?['id'],
+      d['post_id'],
+      d['content_id'],
+      d['contentId'],
+      d['postId'],
+      d['id'],
+      d['content']?['id'],
+      d['entry']?['id'],
+      d['post']?['id'],
     ]);
     commentId ??= _firstInt([
-      d['comment_id'], d['commentId'], d['comment']?['id'],
-      d['reply_id'], d['replyId'], d['reply']?['id'],
+      d['comment_id'],
+      d['commentId'],
+      d['comment']?['id'],
+      d['reply_id'],
+      d['replyId'],
+      d['reply']?['id'],
     ]);
     // Last resort: scan the whole notification object for a comment id.
     commentId ??= _deepFindCommentId(item);
@@ -312,7 +330,10 @@ class _NotificationTile extends StatelessWidget {
   int? _firstInt(List<dynamic> candidates) {
     for (final c in candidates) {
       if (c is int) return c;
-      if (c is String) { final v = int.tryParse(c); if (v != null) return v; }
+      if (c is String) {
+        final v = int.tryParse(c);
+        if (v != null) return v;
+      }
     }
     return null;
   }
@@ -320,10 +341,15 @@ class _NotificationTile extends StatelessWidget {
   // A comment id from a URL's `?comment=123` query or `#comment-123` fragment.
   int? _commentFromUri(Uri uri) {
     final c = uri.queryParameters['comment'];
-    if (c != null) { final n = int.tryParse(c); if (n != null) return n; }
+    if (c != null) {
+      final n = int.tryParse(c);
+      if (n != null) return n;
+    }
     if (uri.fragment.isNotEmpty) {
-      final m = RegExp(r'comment[-_]?(\d+)', caseSensitive: false)
-          .firstMatch(uri.fragment);
+      final m = RegExp(
+        r'comment[-_]?(\d+)',
+        caseSensitive: false,
+      ).firstMatch(uri.fragment);
       if (m != null) return int.tryParse(m.group(1)!);
     }
     return null;
@@ -334,19 +360,29 @@ class _NotificationTile extends StatelessWidget {
   int? _deepFindCommentId(dynamic node, [int depth = 0]) {
     if (depth > 6) return null;
     if (node is String) {
-      final m = RegExp(r'[?&#]comment[=/_-]?(\d{3,})', caseSensitive: false)
-              .firstMatch(node) ??
+      final m =
+          RegExp(
+            r'[?&#]comment[=/_-]?(\d{3,})',
+            caseSensitive: false,
+          ).firstMatch(node) ??
           RegExp(r'comment/(\d{3,})', caseSensitive: false).firstMatch(node);
       return m != null ? int.tryParse(m.group(1)!) : null;
     }
     if (node is Map) {
       for (final e in node.entries) {
         final k = e.key.toString().toLowerCase();
-        if (k == 'comment' || k == 'commentid' || k == 'comment_id' ||
-            k == 'reply' || k == 'replyid' || k == 'reply_id') {
+        if (k == 'comment' ||
+            k == 'commentid' ||
+            k == 'comment_id' ||
+            k == 'reply' ||
+            k == 'replyid' ||
+            k == 'reply_id') {
           final v = e.value;
           if (v is int && v > 0) return v;
-          if (v is String) { final n = int.tryParse(v); if (n != null) return n; }
+          if (v is String) {
+            final n = int.tryParse(v);
+            if (n != null) return n;
+          }
           if (v is Map && v['id'] is int) return v['id'] as int;
         }
       }
@@ -367,25 +403,42 @@ class _NotificationTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final html = _deepFindHtml(item);
     final avatarUrl = _getAvatarUrl();
-    final date = _d['date'] ?? item['date'] ?? _d['dateAdded'] ?? item['dateAdded'] ??
-        _d['datePublished'] ?? item['datePublished'];
+    final date =
+        _d['date'] ??
+        item['date'] ??
+        _d['dateAdded'] ??
+        item['dateAdded'] ??
+        _d['datePublished'] ??
+        item['datePublished'];
 
     final (entryId, commentId, profileId) = _targetIds(html);
 
     final spans = <InlineSpan>[];
     if (html != null) {
-      final anchorRe = RegExp(r'''<a\s[^>]*?href\s*=\s*["']([^"']+)["'][^>]*>(.*?)</a>''',
-          caseSensitive: false, dotAll: true);
+      final anchorRe = RegExp(
+        r'''<a\s[^>]*?href\s*=\s*["']([^"']+)["'][^>]*>(.*?)</a>''',
+        caseSensitive: false,
+        dotAll: true,
+      );
       int last = 0;
       for (final m in anchorRe.allMatches(html)) {
         if (m.start > last) {
           spans.add(TextSpan(text: _clean(html.substring(last, m.start))));
         }
-        spans.add(TextSpan(text: _clean(m.group(2)!),
-            style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.textPrimary)));
+        spans.add(
+          TextSpan(
+            text: _clean(m.group(2)!),
+            style: TextStyle(
+              fontWeight: FontWeight.bold,
+              color: AppColors.textPrimary,
+            ),
+          ),
+        );
         last = m.end;
       }
-      if (last < html.length) spans.add(TextSpan(text: _clean(html.substring(last))));
+      if (last < html.length) {
+        spans.add(TextSpan(text: _clean(html.substring(last))));
+      }
     } else {
       spans.add(TextSpan(text: _plainFallback()));
     }
@@ -393,82 +446,91 @@ class _NotificationTile extends StatelessWidget {
     return GlassCard(
       margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
       child: ListTile(
-      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-      leading: Stack(
-        clipBehavior: Clip.none,
-        children: [
-          avatarUrl != null
-              ? ClipOval(
-                  child: Image.network(
-                    avatarUrl,
-                    width: 42,
-                    height: 42,
-                    fit: BoxFit.cover,
-                    errorBuilder: (_, _, _) => Avatar(uuid: null, size: 42),
-                  ),
-                )
-              : Avatar(uuid: null, size: 42),
-          Positioned(
-            bottom: -2,
-            right: -2,
-            child: Container(
-              padding: const EdgeInsets.all(3),
-              decoration: BoxDecoration(
+        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        leading: Stack(
+          clipBehavior: Clip.none,
+          children: [
+            avatarUrl != null
+                ? ClipOval(
+                    child: Image.network(
+                      avatarUrl,
+                      width: 42,
+                      height: 42,
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, _, _) => Avatar(uuid: null, size: 42),
+                    ),
+                  )
+                : Avatar(uuid: null, size: 42),
+            Positioned(
+              bottom: -2,
+              right: -2,
+              child: Container(
+                padding: const EdgeInsets.all(3),
+                decoration: BoxDecoration(
                   color: _badgeColor(),
                   shape: BoxShape.circle,
-                  border: Border.all(color: AppColors.bgCard, width: 1.5)),
-              child: Icon(_iconData(), size: 11, color: Colors.white),
+                  border: Border.all(color: AppColors.bgCard, width: 1.5),
+                ),
+                child: Icon(_iconData(), size: 11, color: Colors.white),
+              ),
             ),
-          ),
-        ],
-      ),
-      title: Text.rich(
-        TextSpan(
-          style: TextStyle(
+          ],
+        ),
+        title: Text.rich(
+          TextSpan(
+            style: TextStyle(
               color: AppColors.textSecondary,
               fontSize: 14,
-              height: 1.35),
-          children: spans,
+              height: 1.35,
+            ),
+            children: spans,
+          ),
+          maxLines: 4,
+          overflow: TextOverflow.ellipsis,
         ),
-        maxLines: 4,
-        overflow: TextOverflow.ellipsis,
-      ),
-      subtitle: date != null
-          ? Padding(
-              padding: const EdgeInsets.only(top: 2),
-              child: Text(_timeAgo(date),
+        subtitle: date != null
+            ? Padding(
+                padding: const EdgeInsets.only(top: 2),
+                child: Text(
+                  _timeAgo(date),
                   style: TextStyle(
-                      color: AppColors.textMuted, fontSize: 12)),
-            )
-          : null,
-      // Diagnostic: long-press copies the raw notification JSON so its exact
-      // shape can be inspected if comment-id extraction ever misses.
-      onLongPress: () {
-        Clipboard.setData(ClipboardData(text: jsonEncode(item)));
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('JSON уведомления скопирован')),
-        );
-      },
-      onTap: (profileId != null || entryId != null)
-          ? () {
-              if (profileId != null) {
-                final users = item['users'];
-                final name = users is List && users.isNotEmpty
-                    ? users[0]['name']
-                    : null;
-                openUserProfile(context, {'id': profileId, 'name': name});
-              } else {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => PostScreen(
-                        postId: entryId!, title: '', scrollToCommentId: commentId),
+                    color: AppColors.textMuted,
+                    fontSize: 12,
                   ),
-                );
+                ),
+              )
+            : null,
+        // Diagnostic: long-press copies the raw notification JSON so its exact
+        // shape can be inspected if comment-id extraction ever misses.
+        onLongPress: () {
+          Clipboard.setData(ClipboardData(text: jsonEncode(item)));
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('JSON уведомления скопирован')),
+          );
+        },
+        onTap: (profileId != null || entryId != null)
+            ? () {
+                if (profileId != null) {
+                  final users = item['users'];
+                  final name = users is List && users.isNotEmpty
+                      ? users[0]['name']
+                      : null;
+                  openUserProfile(context, {'id': profileId, 'name': name});
+                } else {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => PostScreen(
+                        postId: entryId!,
+                        title: '',
+                        scrollToCommentId: commentId,
+                      ),
+                    ),
+                  );
+                }
               }
-            }
-          : null,
-    ),
+            : null,
+      ),
     );
   }
 

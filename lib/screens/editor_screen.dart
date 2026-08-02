@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
-import '../api/dtf_api.dart';
+import '../features/editor/data/editor_repository.dart';
+import '../features/editor/presentation/editor_controller.dart';
 import '../services/settings_service.dart';
 import '../theme.dart';
+import '../widgets/editor_toolbar.dart';
 
 // ---------------------------------------------------------------------------
 // Block model
@@ -28,19 +30,23 @@ class _Block {
   final List<dynamic> mediaItems;
 
   _Block(this.type)
-      : id = '${type.index}_${DateTime.now().microsecondsSinceEpoch}',
-        ctrl = TextEditingController(),
-        focusNode = FocusNode(),
-        listCtrls = [TextEditingController()],
-        listFoci = [FocusNode()],
-        audioTitleCtrl = TextEditingController(),
-        mediaItems = [];
+    : id = '${type.index}_${DateTime.now().microsecondsSinceEpoch}',
+      ctrl = TextEditingController(),
+      focusNode = FocusNode(),
+      listCtrls = [TextEditingController()],
+      listFoci = [FocusNode()],
+      audioTitleCtrl = TextEditingController(),
+      mediaItems = [];
 
   void dispose() {
     ctrl.dispose();
     focusNode.dispose();
-    for (final c in listCtrls) { c.dispose(); }
-    for (final f in listFoci) { f.dispose(); }
+    for (final c in listCtrls) {
+      c.dispose();
+    }
+    for (final f in listFoci) {
+      f.dispose();
+    }
     audioTitleCtrl.dispose();
   }
 }
@@ -64,13 +70,17 @@ class _EditorScreenState extends State<EditorScreen> {
   bool _reorderMode = false;
   bool _nsfw = false;
   bool _publishing = false;
-  List<dynamic> _subsites = [];
-  dynamic _subsite;
+  late final EditorController _editorController;
+  List<Map<String, dynamic>> get _subsites => _editorController.subsites
+      .map((subsite) => subsite.rawJson)
+      .toList(growable: false);
+  Map<String, dynamic>? _subsite;
   final _picker = ImagePicker();
 
   @override
   void initState() {
     super.initState();
+    _editorController = EditorController(context.read<EditorRepository>());
     _addBlock(_BType.text, 0);
     _loadSubsites();
     _titleFocus.addListener(() {
@@ -80,9 +90,12 @@ class _EditorScreenState extends State<EditorScreen> {
 
   @override
   void dispose() {
+    _editorController.dispose();
     _titleCtrl.dispose();
     _titleFocus.dispose();
-    for (final b in _blocks) { b.dispose(); }
+    for (final b in _blocks) {
+      b.dispose();
+    }
     super.dispose();
   }
 
@@ -138,7 +151,8 @@ class _EditorScreenState extends State<EditorScreen> {
   void _convertBlock(_BType type, {String? headerStyle}) {
     if (_focused < 0 || _focused >= _blocks.length) return;
     final old = _blocks[_focused];
-    if (old.type == type && (headerStyle == null || old.headerStyle == headerStyle)) {
+    if (old.type == type &&
+        (headerStyle == null || old.headerStyle == headerStyle)) {
       return;
     }
     final text = old.ctrl.text;
@@ -147,7 +161,9 @@ class _EditorScreenState extends State<EditorScreen> {
     b.focusNode.addListener(() {
       if (b.focusNode.hasFocus) setState(() => _focused = _blocks.indexOf(b));
     });
-    if (type == _BType.header && headerStyle != null) b.headerStyle = headerStyle;
+    if (type == _BType.header && headerStyle != null) {
+      b.headerStyle = headerStyle;
+    }
     if (type == _BType.list && text.isNotEmpty) {
       b.listCtrls[0].text = text;
       b.ctrl.clear();
@@ -155,14 +171,18 @@ class _EditorScreenState extends State<EditorScreen> {
     old.dispose();
     _blocks[_focused] = b;
     setState(() {});
-    WidgetsBinding.instance.addPostFrameCallback((_) => b.focusNode.requestFocus());
+    WidgetsBinding.instance.addPostFrameCallback(
+      (_) => b.focusNode.requestFocus(),
+    );
   }
 
   void _onTextEnter(int blockIndex) {
     final idx = blockIndex + 1;
     final b = _addBlock(_BType.text, idx);
     setState(() => _focused = idx);
-    WidgetsBinding.instance.addPostFrameCallback((_) => b.focusNode.requestFocus());
+    WidgetsBinding.instance.addPostFrameCallback(
+      (_) => b.focusNode.requestFocus(),
+    );
   }
 
   // ---------------------------------------------------------------------------
@@ -208,20 +228,29 @@ class _EditorScreenState extends State<EditorScreen> {
     final choice = await showModalBottomSheet<String>(
       context: context,
       builder: (_) => SafeArea(
-        child: Column(mainAxisSize: MainAxisSize.min, children: [
-          const SizedBox(height: 8),
-          ListTile(
-            leading: Icon(Icons.photo_library, color: AppColors.textPrimary),
-            title: Text('Фото', style: TextStyle(color: AppColors.textPrimary)),
-            onTap: () => Navigator.pop(context, 'photo'),
-          ),
-          ListTile(
-            leading: Icon(Icons.videocam, color: AppColors.textPrimary),
-            title: Text('Видео', style: TextStyle(color: AppColors.textPrimary)),
-            onTap: () => Navigator.pop(context, 'video'),
-          ),
-          const SizedBox(height: 8),
-        ]),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox(height: 8),
+            ListTile(
+              leading: Icon(Icons.photo_library, color: AppColors.textPrimary),
+              title: Text(
+                'Фото',
+                style: TextStyle(color: AppColors.textPrimary),
+              ),
+              onTap: () => Navigator.pop(context, 'photo'),
+            ),
+            ListTile(
+              leading: Icon(Icons.videocam, color: AppColors.textPrimary),
+              title: Text(
+                'Видео',
+                style: TextStyle(color: AppColors.textPrimary),
+              ),
+              onTap: () => Navigator.pop(context, 'video'),
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
       ),
     );
     if (choice == null || !mounted) return;
@@ -231,8 +260,7 @@ class _EditorScreenState extends State<EditorScreen> {
         : await _picker.pickVideo(source: ImageSource.gallery);
     if (file == null || !mounted) return;
 
-    final settings = context.read<SettingsService>();
-    final uploaded = await DtfApi.uploadMediaFile(file.path, settings);
+    final uploaded = await _editorController.uploadMedia(file.path);
     if (!mounted || uploaded == null) return;
 
     setState(() {
@@ -245,7 +273,9 @@ class _EditorScreenState extends State<EditorScreen> {
   }
 
   Future<void> _onToolbarMedia() async {
-    if (_focused >= 0 && _focused < _blocks.length && _blocks[_focused].type == _BType.media) {
+    if (_focused >= 0 &&
+        _focused < _blocks.length &&
+        _blocks[_focused].type == _BType.media) {
       await _pickMedia(_focused);
     } else {
       final idx = _focused >= 0 ? _focused + 1 : _blocks.length;
@@ -261,7 +291,10 @@ class _EditorScreenState extends State<EditorScreen> {
     final url = await showDialog<String>(
       context: context,
       builder: (_) => AlertDialog(
-        title: Text('Аудио по ссылке', style: TextStyle(color: AppColors.textPrimary)),
+        title: Text(
+          'Аудио по ссылке',
+          style: TextStyle(color: AppColors.textPrimary),
+        ),
         content: TextField(
           controller: urlCtrl,
           autofocus: true,
@@ -275,11 +308,11 @@ class _EditorScreenState extends State<EditorScreen> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('Отмена'),
+            child: Text('Отмена'),
           ),
           TextButton(
             onPressed: () => Navigator.pop(context, urlCtrl.text.trim()),
-            child: const Text('Добавить'),
+            child: Text('Добавить'),
           ),
         ],
       ),
@@ -287,14 +320,15 @@ class _EditorScreenState extends State<EditorScreen> {
     urlCtrl.dispose();
     if (url == null || url.isEmpty || !mounted) return;
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Загружаю аудио...')));
-    final settings = context.read<SettingsService>();
-    final uploaded = await DtfApi.extractMediaByUrl(url, settings);
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('Загружаю аудио...')));
+    final uploaded = await _editorController.extractMedia(url);
     if (!mounted) return;
     if (uploaded == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Не удалось загрузить аудио по ссылке')));
+        const SnackBar(content: Text('Не удалось загрузить аудио по ссылке')),
+      );
       return;
     }
 
@@ -312,8 +346,8 @@ class _EditorScreenState extends State<EditorScreen> {
   Future<void> _loadSubsites() async {
     final settings = context.read<SettingsService>();
     if (!settings.isLoggedIn) return;
-    final list = await DtfApi.getMySubsites(settings);
-    if (mounted) setState(() => _subsites = list);
+    await _editorController.loadSubsites();
+    if (mounted) setState(() {});
   }
 
   // ---------------------------------------------------------------------------
@@ -323,35 +357,37 @@ class _EditorScreenState extends State<EditorScreen> {
   Future<void> _publish() async {
     final title = _titleCtrl.text.trim();
     if (title.isEmpty) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('Добавь заголовок поста')));
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Добавь заголовок поста')));
       return;
     }
-    final settings = context.read<SettingsService>();
     final subsite = _subsite ?? (_subsites.isNotEmpty ? _subsites.first : null);
     if (subsite == null) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('Нет доступных подсайтов')));
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Нет доступных подсайтов')));
       return;
     }
     setState(() => _publishing = true);
-    final result = await DtfApi.createEntry(
+    final postId = await _editorController.save(
       title: title,
       blocks: _buildBlocksJson(),
       subsiteId: subsite['id'] as int,
-      isPublished: true,
+      publish: true,
       isNsfw: _nsfw,
-      settings: settings,
     );
     if (!mounted) return;
     setState(() => _publishing = false);
-    if (result['ok'] == true) {
+    if (postId != null) {
       Navigator.of(context).pop();
-      ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('Пост опубликован!')));
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Пост опубликован!')));
     } else {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(result['error'] ?? 'Ошибка')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(_editorController.failure?.message ?? 'Ошибка')),
+      );
     }
   }
 
@@ -362,19 +398,28 @@ class _EditorScreenState extends State<EditorScreen> {
         case _BType.text:
           final t = b.ctrl.text.trim();
           if (t.isNotEmpty) {
-            out.add({'type': 'text', 'data': {'text': '<p>$t</p>'}});
+            out.add({
+              'type': 'text',
+              'data': {'text': '<p>$t</p>'},
+            });
           }
         case _BType.header:
           final t = b.ctrl.text.trim();
           if (t.isNotEmpty) {
-            out.add({'type': 'header', 'data': {'text': t, 'style': b.headerStyle}});
+            out.add({
+              'type': 'header',
+              'data': {'text': t, 'style': b.headerStyle},
+            });
           }
         case _BType.quote:
           // QuoteBlockDto = {text, subline1} (NOT "author" — the server drops
           // the block otherwise, which is why quotes never saved).
           final t = b.ctrl.text.trim();
           if (t.isNotEmpty) {
-            out.add({'type': 'quote', 'data': {'text': t, 'subline1': ''}});
+            out.add({
+              'type': 'quote',
+              'data': {'text': t, 'subline1': ''},
+            });
           }
         case _BType.list:
           final items = b.listCtrls
@@ -382,28 +427,42 @@ class _EditorScreenState extends State<EditorScreen> {
               .where((s) => s.isNotEmpty)
               .toList();
           if (items.isNotEmpty) {
-            out.add({'type': 'list', 'data': {'type': 'UL', 'items': items}});
+            out.add({
+              'type': 'list',
+              'data': {'type': 'UL', 'items': items},
+            });
           }
         case _BType.delimiter:
           // DividerBlockDto = {type}; empty {} made the server reject it.
-          out.add({'type': 'delimiter', 'data': {'type': 'default'}});
+          out.add({
+            'type': 'delimiter',
+            'data': {'type': 'default'},
+          });
         case _BType.audio:
           // AudioBlockDto = {title, hash, audio}.
           if (b.audioData != null) {
-            out.add({'type': 'audio', 'data': {
-              'title': b.audioTitleCtrl.text.trim(),
-              'hash': '',
-              'audio': b.audioData,
-            }});
+            out.add({
+              'type': 'audio',
+              'data': {
+                'title': b.audioTitleCtrl.text.trim(),
+                'hash': '',
+                'audio': b.audioData,
+              },
+            });
           }
         case _BType.media:
           // MediaItemBlockDto = {title, image}; strip the extra 'author' key.
           if (b.mediaItems.isNotEmpty) {
-            out.add({'type': 'media', 'data': {
-              'items': b.mediaItems
-                  .map((m) => {'title': m['title'] ?? '', 'image': m['image']})
-                  .toList(),
-            }});
+            out.add({
+              'type': 'media',
+              'data': {
+                'items': b.mediaItems
+                    .map(
+                      (m) => {'title': m['title'] ?? '', 'image': m['image']},
+                    )
+                    .toList(),
+              },
+            });
           }
       }
     }
@@ -420,18 +479,27 @@ class _EditorScreenState extends State<EditorScreen> {
     return Scaffold(
       backgroundColor: AppColors.bgDeep,
       appBar: _buildAppBar(accent),
-      body: Column(children: [
-        Expanded(child: _reorderMode ? _buildReorderList(accent) : _buildScrollList(accent)),
-        _buildToolbar(accent),
-        SizedBox(height: MediaQuery.of(context).viewInsets.bottom > 0
-            ? 0
-            : MediaQuery.of(context).padding.bottom),
-      ]),
+      body: Column(
+        children: [
+          Expanded(
+            child: _reorderMode
+                ? _buildReorderList(accent)
+                : _buildScrollList(accent),
+          ),
+          _buildToolbar(accent),
+          SizedBox(
+            height: MediaQuery.of(context).viewInsets.bottom > 0
+                ? 0
+                : MediaQuery.of(context).padding.bottom,
+          ),
+        ],
+      ),
     );
   }
 
   PreferredSizeWidget _buildAppBar(Color accent) {
-    final name = _subsite?['name'] ??
+    final name =
+        _subsite?['name'] ??
         (_subsites.isNotEmpty ? _subsites.first['name'] : 'Мой профиль');
     return AppBar(
       backgroundColor: AppColors.bgCard,
@@ -440,12 +508,24 @@ class _EditorScreenState extends State<EditorScreen> {
       titleSpacing: 0,
       title: GestureDetector(
         onTap: _showSubsiteSelector,
-        child: Row(mainAxisSize: MainAxisSize.min, children: [
-          Text(name,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              name,
               style: TextStyle(
-                  color: AppColors.textPrimary, fontSize: 15, fontWeight: FontWeight.w600)),
-          Icon(Icons.arrow_drop_down, color: AppColors.textSecondary, size: 20),
-        ]),
+                color: AppColors.textPrimary,
+                fontSize: 15,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            Icon(
+              Icons.arrow_drop_down,
+              color: AppColors.textSecondary,
+              size: 20,
+            ),
+          ],
+        ),
       ),
       actions: [
         IconButton(
@@ -456,9 +536,11 @@ class _EditorScreenState extends State<EditorScreen> {
             ? const Padding(
                 padding: EdgeInsets.all(14),
                 child: SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(strokeWidth: 2)))
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+              )
             : IconButton(
                 icon: Icon(Icons.arrow_upward, color: accent),
                 onPressed: _publish,
@@ -489,7 +571,8 @@ class _EditorScreenState extends State<EditorScreen> {
       padding: const EdgeInsets.only(bottom: 100),
       header: _buildTitleField(),
       itemCount: _blocks.length,
-      itemBuilder: (_, i) => _buildBlockRow(_blocks[i], i, accent, key: ValueKey(_blocks[i].id)),
+      itemBuilder: (_, i) =>
+          _buildBlockRow(_blocks[i], i, accent, key: ValueKey(_blocks[i].id)),
       onReorderItem: (oldIdx, newIdx) {
         setState(() {
           final b = _blocks.removeAt(oldIdx);
@@ -517,7 +600,10 @@ class _EditorScreenState extends State<EditorScreen> {
         decoration: InputDecoration(
           hintText: 'Заголовок',
           hintStyle: TextStyle(
-              color: AppColors.textMuted, fontSize: 24, fontWeight: FontWeight.bold),
+            color: AppColors.textMuted,
+            fontSize: 24,
+            fontWeight: FontWeight.bold,
+          ),
           border: InputBorder.none,
           isDense: true,
           contentPadding: EdgeInsets.symmetric(vertical: 4),
@@ -556,7 +642,11 @@ class _EditorScreenState extends State<EditorScreen> {
           if (_reorderMode)
             Padding(
               padding: EdgeInsets.only(left: 8, top: 10),
-              child: Icon(Icons.drag_handle, size: 20, color: AppColors.textMuted),
+              child: Icon(
+                Icons.drag_handle,
+                size: 20,
+                color: AppColors.textMuted,
+              ),
             )
           else if (isFocused)
             GestureDetector(
@@ -579,7 +669,11 @@ class _EditorScreenState extends State<EditorScreen> {
     return TextField(
       controller: block.ctrl,
       focusNode: block.focusNode,
-      style: TextStyle(color: AppColors.textPrimary, fontSize: 16, height: 1.55),
+      style: TextStyle(
+        color: AppColors.textPrimary,
+        fontSize: 16,
+        height: 1.55,
+      ),
       maxLines: null,
       textCapitalization: TextCapitalization.sentences,
       decoration: InputDecoration(
@@ -603,43 +697,61 @@ class _EditorScreenState extends State<EditorScreen> {
 
   Widget _buildHeaderBlock(_Block block, int index, Color accent) {
     final isH2 = block.headerStyle == 'h2';
-    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      const SizedBox(height: 6),
-      Row(children: [
-        _styleChip('H2', selected: isH2, accent: accent, onTap: () => setState(() => block.headerStyle = 'h2')),
-        const SizedBox(width: 4),
-        _styleChip('H3', selected: !isH2, accent: accent, onTap: () => setState(() => block.headerStyle = 'h3')),
-      ]),
-      const SizedBox(height: 4),
-      TextField(
-        controller: block.ctrl,
-        focusNode: block.focusNode,
-        style: TextStyle(
-          color: AppColors.textPrimary,
-          fontSize: isH2 ? 21 : 18,
-          fontWeight: FontWeight.bold,
-          height: 1.3,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const SizedBox(height: 6),
+        Row(
+          children: [
+            _styleChip(
+              'H2',
+              selected: isH2,
+              accent: accent,
+              onTap: () => setState(() => block.headerStyle = 'h2'),
+            ),
+            const SizedBox(width: 4),
+            _styleChip(
+              'H3',
+              selected: !isH2,
+              accent: accent,
+              onTap: () => setState(() => block.headerStyle = 'h3'),
+            ),
+          ],
         ),
-        maxLines: null,
-        textCapitalization: TextCapitalization.sentences,
-        decoration: InputDecoration(
-          hintText: isH2 ? 'Заголовок H2' : 'Заголовок H3',
-          hintStyle: TextStyle(color: AppColors.textMuted, fontWeight: FontWeight.bold),
-          border: InputBorder.none,
-          isDense: true,
-          contentPadding: const EdgeInsets.symmetric(vertical: 4),
+        const SizedBox(height: 4),
+        TextField(
+          controller: block.ctrl,
+          focusNode: block.focusNode,
+          style: TextStyle(
+            color: AppColors.textPrimary,
+            fontSize: isH2 ? 21 : 18,
+            fontWeight: FontWeight.bold,
+            height: 1.3,
+          ),
+          maxLines: null,
+          textCapitalization: TextCapitalization.sentences,
+          decoration: InputDecoration(
+            hintText: isH2 ? 'Заголовок H2' : 'Заголовок H3',
+            hintStyle: TextStyle(
+              color: AppColors.textMuted,
+              fontWeight: FontWeight.bold,
+            ),
+            border: InputBorder.none,
+            isDense: true,
+            contentPadding: const EdgeInsets.symmetric(vertical: 4),
+          ),
+          onChanged: (v) {
+            if (v.endsWith('\n')) {
+              block.ctrl.value = TextEditingValue(
+                text: v.substring(0, v.length - 1),
+                selection: TextSelection.collapsed(offset: v.length - 1),
+              );
+              _onTextEnter(index);
+            }
+          },
         ),
-        onChanged: (v) {
-          if (v.endsWith('\n')) {
-            block.ctrl.value = TextEditingValue(
-              text: v.substring(0, v.length - 1),
-              selection: TextSelection.collapsed(offset: v.length - 1),
-            );
-            _onTextEnter(index);
-          }
-        },
-      ),
-    ]);
+      ],
+    );
   }
 
   Widget _buildQuoteBlock(_Block block, int index, Color accent) {
@@ -666,7 +778,10 @@ class _EditorScreenState extends State<EditorScreen> {
         textCapitalization: TextCapitalization.sentences,
         decoration: InputDecoration(
           hintText: 'Цитата...',
-          hintStyle: TextStyle(color: AppColors.textMuted, fontStyle: FontStyle.italic),
+          hintStyle: TextStyle(
+            color: AppColors.textMuted,
+            fontStyle: FontStyle.italic,
+          ),
           border: InputBorder.none,
           isDense: true,
           contentPadding: EdgeInsets.symmetric(vertical: 6),
@@ -685,57 +800,73 @@ class _EditorScreenState extends State<EditorScreen> {
   }
 
   Widget _buildListBlock(_Block block, int index, Color accent) {
-    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      const SizedBox(height: 4),
-      for (int i = 0; i < block.listCtrls.length; i++)
-        Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
-          Container(
-            width: 6,
-            height: 6,
-            margin: const EdgeInsets.only(right: 10, top: 2),
-            decoration: BoxDecoration(
-              color: accent.withValues(alpha: 0.8),
-              shape: BoxShape.circle,
-            ),
-          ),
-          Expanded(
-            child: TextField(
-              controller: block.listCtrls[i],
-              focusNode: block.listFoci[i],
-              style: TextStyle(color: AppColors.textPrimary, fontSize: 16, height: 1.4),
-              textInputAction: TextInputAction.next,
-              textCapitalization: TextCapitalization.sentences,
-              decoration: InputDecoration(
-                hintText: 'Пункт ${i + 1}...',
-                hintStyle: TextStyle(color: AppColors.textMuted),
-                border: InputBorder.none,
-                isDense: true,
-                contentPadding: const EdgeInsets.symmetric(vertical: 4),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const SizedBox(height: 4),
+        for (int i = 0; i < block.listCtrls.length; i++)
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Container(
+                width: 6,
+                height: 6,
+                margin: const EdgeInsets.only(right: 10, top: 2),
+                decoration: BoxDecoration(
+                  color: accent.withValues(alpha: 0.8),
+                  shape: BoxShape.circle,
+                ),
               ),
-              onSubmitted: (_) => _addListItem(block, i),
-            ),
-          ),
-          if (block.listCtrls.length > 1)
-            GestureDetector(
-              onTap: () => _removeListItem(block, i),
-              child: Padding(
-                padding: EdgeInsets.only(left: 6),
-                child: Icon(Icons.remove_circle_outline, size: 16, color: AppColors.textMuted),
+              Expanded(
+                child: TextField(
+                  controller: block.listCtrls[i],
+                  focusNode: block.listFoci[i],
+                  style: TextStyle(
+                    color: AppColors.textPrimary,
+                    fontSize: 16,
+                    height: 1.4,
+                  ),
+                  textInputAction: TextInputAction.next,
+                  textCapitalization: TextCapitalization.sentences,
+                  decoration: InputDecoration(
+                    hintText: 'Пункт ${i + 1}...',
+                    hintStyle: TextStyle(color: AppColors.textMuted),
+                    border: InputBorder.none,
+                    isDense: true,
+                    contentPadding: const EdgeInsets.symmetric(vertical: 4),
+                  ),
+                  onSubmitted: (_) => _addListItem(block, i),
+                ),
               ),
-            ),
-        ]),
-      TextButton.icon(
-        onPressed: () => _addListItem(block, block.listCtrls.length - 1),
-        icon: Icon(Icons.add, size: 15, color: AppColors.textMuted),
-        label: Text('Добавить пункт',
-            style: TextStyle(color: AppColors.textMuted, fontSize: 13)),
-        style: TextButton.styleFrom(
-          padding: const EdgeInsets.only(left: 16),
-          minimumSize: const Size(0, 32),
+              if (block.listCtrls.length > 1)
+                GestureDetector(
+                  onTap: () => _removeListItem(block, i),
+                  child: Padding(
+                    padding: const EdgeInsets.only(left: 6),
+                    child: Icon(
+                      Icons.remove_circle_outline,
+                      size: 16,
+                      color: AppColors.textMuted,
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        TextButton.icon(
+          onPressed: () => _addListItem(block, block.listCtrls.length - 1),
+          icon: Icon(Icons.add, size: 15, color: AppColors.textMuted),
+          label: Text(
+            'Добавить пункт',
+            style: TextStyle(color: AppColors.textMuted, fontSize: 13),
+          ),
+          style: TextButton.styleFrom(
+            padding: const EdgeInsets.only(left: 16),
+            minimumSize: const Size(0, 32),
+          ),
         ),
-      ),
-      const SizedBox(height: 4),
-    ]);
+        const SizedBox(height: 4),
+      ],
+    );
   }
 
   Widget _buildDelimiterBlock(int index) {
@@ -743,16 +874,23 @@ class _EditorScreenState extends State<EditorScreen> {
       onTap: () => setState(() => _focused = index),
       child: Padding(
         padding: const EdgeInsets.symmetric(vertical: 16),
-        child: Row(children: [
-          Expanded(child: Divider(color: AppColors.bgElevated, thickness: 1)),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12),
-            child: Text('* * *',
+        child: Row(
+          children: [
+            Expanded(child: Divider(color: AppColors.bgElevated, thickness: 1)),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              child: Text(
+                '* * *',
                 style: TextStyle(
-                    color: AppColors.textMuted, fontSize: 14, letterSpacing: 5)),
-          ),
-          Expanded(child: Divider(color: AppColors.bgElevated, thickness: 1)),
-        ]),
+                  color: AppColors.textMuted,
+                  fontSize: 14,
+                  letterSpacing: 5,
+                ),
+              ),
+            ),
+            Expanded(child: Divider(color: AppColors.bgElevated, thickness: 1)),
+          ],
+        ),
       ),
     );
   }
@@ -767,30 +905,49 @@ class _EditorScreenState extends State<EditorScreen> {
           borderRadius: BorderRadius.circular(10),
           border: Border.all(color: AppColors.bgElevated),
         ),
-        child: Row(children: [
-          Icon(Icons.audiotrack_outlined, color: AppColors.textSecondary, size: 24),
-          const SizedBox(width: 12),
-          Expanded(
-            child: block.audioData != null
-                ? Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    TextField(
-                      controller: block.audioTitleCtrl,
-                      style: TextStyle(color: AppColors.textPrimary, fontSize: 15),
-                      decoration: InputDecoration(
-                        hintText: 'Название аудио...',
-                        hintStyle: TextStyle(color: AppColors.textMuted),
-                        border: InputBorder.none,
-                        isDense: true,
-                        contentPadding: EdgeInsets.zero,
-                      ),
+        child: Row(
+          children: [
+            Icon(
+              Icons.audiotrack_outlined,
+              color: AppColors.textSecondary,
+              size: 24,
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: block.audioData != null
+                  ? Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        TextField(
+                          controller: block.audioTitleCtrl,
+                          style: TextStyle(
+                            color: AppColors.textPrimary,
+                            fontSize: 15,
+                          ),
+                          decoration: InputDecoration(
+                            hintText: 'Название аудио...',
+                            hintStyle: TextStyle(color: AppColors.textMuted),
+                            border: InputBorder.none,
+                            isDense: true,
+                            contentPadding: EdgeInsets.zero,
+                          ),
+                        ),
+                        Text(
+                          'Аудио прикреплено ✓',
+                          style: TextStyle(
+                            color: AppColors.textMuted,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ],
+                    )
+                  : Text(
+                      'Загрузка аудио...',
+                      style: TextStyle(color: AppColors.textMuted),
                     ),
-                    Text('Аудио прикреплено ✓',
-                        style: TextStyle(color: AppColors.textMuted, fontSize: 12)),
-                  ])
-                : Text('Загрузка аудио...',
-                    style: TextStyle(color: AppColors.textMuted)),
-          ),
-        ]),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -811,13 +968,24 @@ class _EditorScreenState extends State<EditorScreen> {
                     border: Border.all(color: AppColors.bgElevated),
                   ),
                   child: Center(
-                    child: Column(mainAxisSize: MainAxisSize.min, children: [
-                      Icon(Icons.add_photo_alternate_outlined,
-                          color: AppColors.textMuted, size: 30),
-                      const SizedBox(height: 6),
-                      Text('Добавить фото или видео',
-                          style: TextStyle(color: AppColors.textMuted, fontSize: 13)),
-                    ]),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.add_photo_alternate_outlined,
+                          color: AppColors.textMuted,
+                          size: 30,
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          'Добавить фото или видео',
+                          style: TextStyle(
+                            color: AppColors.textMuted,
+                            fontSize: 13,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               )
@@ -839,7 +1007,11 @@ class _EditorScreenState extends State<EditorScreen> {
                             border: Border.all(color: AppColors.bgElevated),
                           ),
                           child: Center(
-                            child: Icon(Icons.add, color: AppColors.textMuted, size: 28),
+                            child: Icon(
+                              Icons.add,
+                              color: AppColors.textMuted,
+                              size: 28,
+                            ),
                           ),
                         ),
                       );
@@ -858,25 +1030,37 @@ class _EditorScreenState extends State<EditorScreen> {
                             image: uuid != null
                                 ? DecorationImage(
                                     image: NetworkImage(
-                                        'https://leonardo.osnova.io/$uuid/-/scale_crop/200x200/center/'),
-                                    fit: BoxFit.cover)
+                                      'https://leonardo.osnova.io/$uuid/-/scale_crop/200x200/center/',
+                                    ),
+                                    fit: BoxFit.cover,
+                                  )
                                 : null,
                           ),
                           child: uuid == null
-                              ? const Center(
-                                  child: CircularProgressIndicator(strokeWidth: 2))
+                              ? Center(
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
+                                )
                               : null,
                         ),
                         Positioned(
                           top: 4,
                           right: 12,
                           child: GestureDetector(
-                            onTap: () => setState(() => block.mediaItems.removeAt(i)),
+                            onTap: () =>
+                                setState(() => block.mediaItems.removeAt(i)),
                             child: Container(
                               padding: const EdgeInsets.all(3),
                               decoration: const BoxDecoration(
-                                  color: Colors.black54, shape: BoxShape.circle),
-                              child: const Icon(Icons.close, size: 12, color: Colors.white),
+                                color: Colors.black54,
+                                shape: BoxShape.circle,
+                              ),
+                              child: Icon(
+                                Icons.close,
+                                size: 12,
+                                color: Colors.white,
+                              ),
                             ),
                           ),
                         ),
@@ -893,74 +1077,48 @@ class _EditorScreenState extends State<EditorScreen> {
   // Toolbar
   // ---------------------------------------------------------------------------
 
-  Widget _buildToolbar(Color accent) {
-    return Container(
-      height: 48,
-      decoration: BoxDecoration(
-        color: AppColors.bgCard,
-        border: Border(top: BorderSide(color: AppColors.bgElevated)),
-      ),
-      child: Row(children: [
-        _toolTxt('H2', onTap: () => _convertBlock(_BType.header, headerStyle: 'h2')),
-        _toolTxt('H3', onTap: () => _convertBlock(_BType.header, headerStyle: 'h3')),
-        _toolTxt('T', onTap: () => _convertBlock(_BType.text)),
-        _toolIco(Icons.format_quote, onTap: () => _convertBlock(_BType.quote)),
-        _toolIco(Icons.format_list_bulleted, onTap: () => _convertBlock(_BType.list)),
-        _toolTxt('* * *', small: true, onTap: () {
-          _insertBlock(_BType.delimiter, afterIndex: _focused >= 0 ? _focused : null);
-        }),
-        _toolIco(Icons.mic_none, onTap: _onToolbarAudio),
-        _toolIco(Icons.image_outlined, onTap: _onToolbarMedia),
-      ]),
-    );
-  }
-
-  Widget _toolTxt(String label, {required VoidCallback onTap, bool small = false}) {
-    return Expanded(
-      child: InkWell(
-        onTap: onTap,
-        child: Center(
-          child: Text(label,
-              style: TextStyle(
-                color: AppColors.textSecondary,
-                fontSize: small ? 11 : 13,
-                fontWeight: FontWeight.w700,
-                letterSpacing: small ? 2 : 0,
-              )),
-        ),
-      ),
-    );
-  }
-
-  Widget _toolIco(IconData icon, {required VoidCallback onTap}) {
-    return Expanded(
-      child: InkWell(
-        onTap: onTap,
-        child: Center(child: Icon(icon, size: 20, color: AppColors.textSecondary)),
-      ),
-    );
-  }
+  Widget _buildToolbar(Color accent) => EditorToolbar(
+    onH2: () => _convertBlock(_BType.header, headerStyle: 'h2'),
+    onH3: () => _convertBlock(_BType.header, headerStyle: 'h3'),
+    onText: () => _convertBlock(_BType.text),
+    onQuote: () => _convertBlock(_BType.quote),
+    onList: () => _convertBlock(_BType.list),
+    onDelimiter: () => _insertBlock(
+      _BType.delimiter,
+      afterIndex: _focused >= 0 ? _focused : null,
+    ),
+    onAudio: _onToolbarAudio,
+    onMedia: _onToolbarMedia,
+  );
 
   // ---------------------------------------------------------------------------
   // Helper widgets
   // ---------------------------------------------------------------------------
 
-  Widget _styleChip(String label,
-      {required bool selected, required Color accent, required VoidCallback onTap}) {
+  Widget _styleChip(
+    String label, {
+    required bool selected,
+    required Color accent,
+    required VoidCallback onTap,
+  }) {
     return GestureDetector(
       onTap: onTap,
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
         decoration: BoxDecoration(
-          color: selected ? accent.withValues(alpha: 0.2) : AppColors.bgElevated,
+          color: selected
+              ? accent.withValues(alpha: 0.2)
+              : AppColors.bgElevated,
           borderRadius: BorderRadius.circular(5),
         ),
-        child: Text(label,
-            style: TextStyle(
-              color: selected ? accent : AppColors.textMuted,
-              fontSize: 11,
-              fontWeight: FontWeight.bold,
-            )),
+        child: Text(
+          label,
+          style: TextStyle(
+            color: selected ? accent : AppColors.textMuted,
+            fontSize: 11,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
       ),
     );
   }
@@ -971,35 +1129,52 @@ class _EditorScreenState extends State<EditorScreen> {
 
   void _showSubsiteSelector() {
     if (_subsites.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Загрузка подсайтов...')));
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Загрузка подсайтов...')));
       return;
     }
     showModalBottomSheet(
       context: context,
       builder: (_) => SafeArea(
-        child: Column(mainAxisSize: MainAxisSize.min, children: [
-          Padding(
-            padding: EdgeInsets.symmetric(vertical: 14),
-            child: Text('Опубликовать в',
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 14),
+              child: Text(
+                'Опубликовать в',
                 style: TextStyle(
-                    color: AppColors.textPrimary, fontSize: 15, fontWeight: FontWeight.bold)),
-          ),
-          for (final s in _subsites)
-            ListTile(
-              leading: Icon(Icons.person_outline, color: AppColors.textPrimary),
-              title: Text(s['name'] ?? '',
-                  style: TextStyle(color: AppColors.textPrimary)),
-              trailing: _subsite?['id'] == s['id']
-                  ? Icon(Icons.check, color: Theme.of(context).colorScheme.primary)
-                  : null,
-              onTap: () {
-                setState(() => _subsite = s);
-                Navigator.pop(context);
-              },
+                  color: AppColors.textPrimary,
+                  fontSize: 15,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
             ),
-          const SizedBox(height: 8),
-        ]),
+            for (final s in _subsites)
+              ListTile(
+                leading: Icon(
+                  Icons.person_outline,
+                  color: AppColors.textPrimary,
+                ),
+                title: Text(
+                  s['name'] ?? '',
+                  style: TextStyle(color: AppColors.textPrimary),
+                ),
+                trailing: _subsite?['id'] == s['id']
+                    ? Icon(
+                        Icons.check,
+                        color: Theme.of(context).colorScheme.primary,
+                      )
+                    : null,
+                onTap: () {
+                  setState(() => _subsite = s);
+                  Navigator.pop(context);
+                },
+              ),
+            const SizedBox(height: 8),
+          ],
+        ),
       ),
     );
   }
@@ -1009,33 +1184,43 @@ class _EditorScreenState extends State<EditorScreen> {
       context: context,
       builder: (_) => SafeArea(
         child: StatefulBuilder(
-          builder: (ctx, setS) => Column(mainAxisSize: MainAxisSize.min, children: [
-            const SizedBox(height: 12),
-            ListTile(
-              leading: Icon(Icons.eighteen_up_rating_outlined,
-                  color: AppColors.textPrimary),
-              title: Text('18+', style: TextStyle(color: AppColors.textPrimary)),
-              trailing: Switch(
-                value: _nsfw,
-                onChanged: (v) {
-                  setState(() => _nsfw = v);
-                  setS(() {});
+          builder: (ctx, setS) => Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const SizedBox(height: 12),
+              ListTile(
+                leading: Icon(
+                  Icons.eighteen_up_rating_outlined,
+                  color: AppColors.textPrimary,
+                ),
+                title: Text(
+                  '18+',
+                  style: TextStyle(color: AppColors.textPrimary),
+                ),
+                trailing: Switch(
+                  value: _nsfw,
+                  onChanged: (v) {
+                    setState(() => _nsfw = v);
+                    setS(() {});
+                  },
+                ),
+              ),
+              ListTile(
+                leading: Icon(Icons.reorder, color: AppColors.textPrimary),
+                title: Text(
+                  _reorderMode
+                      ? 'Выйти из режима перестановки'
+                      : 'Переставить блоки',
+                  style: TextStyle(color: AppColors.textPrimary),
+                ),
+                onTap: () {
+                  setState(() => _reorderMode = !_reorderMode);
+                  Navigator.pop(ctx);
                 },
               ),
-            ),
-            ListTile(
-              leading: Icon(Icons.reorder, color: AppColors.textPrimary),
-              title: Text(
-                _reorderMode ? 'Выйти из режима перестановки' : 'Переставить блоки',
-                style: TextStyle(color: AppColors.textPrimary),
-              ),
-              onTap: () {
-                setState(() => _reorderMode = !_reorderMode);
-                Navigator.pop(ctx);
-              },
-            ),
-            const SizedBox(height: 8),
-          ]),
+              const SizedBox(height: 8),
+            ],
+          ),
         ),
       ),
     );

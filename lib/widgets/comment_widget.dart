@@ -1,8 +1,9 @@
-import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
-import '../api/dtf_api.dart';
+import '../features/comments/data/comments_repository.dart';
+import '../features/comments/presentation/comments_controller.dart';
+import '../models/comment.dart';
 import '../services/settings_service.dart';
 import '../theme.dart';
 import 'avatar.dart';
@@ -13,11 +14,12 @@ import 'media_view.dart';
 import 'linkified_text.dart';
 
 class CommentWidget extends StatefulWidget {
-  final dynamic comment;
+  final Comment comment;
   final VoidCallback? onReply;
   final VoidCallback? onReactionChanged;
   final VoidCallback? onToggleCollapse;
   final bool? branchCollapsed;
+  final int? depth;
 
   const CommentWidget({
     super.key,
@@ -26,6 +28,7 @@ class CommentWidget extends StatefulWidget {
     this.onReactionChanged,
     this.onToggleCollapse,
     this.branchCollapsed,
+    this.depth,
   });
 
   @override
@@ -33,9 +36,34 @@ class CommentWidget extends StatefulWidget {
 }
 
 class _CommentWidgetState extends State<CommentWidget> {
+  late final CommentsController _controller;
   bool _collapsed = false;
+  late Map<String, dynamic> _data;
 
-  int get _commentId => widget.comment['id'] as int? ?? 0;
+  @override
+  void initState() {
+    super.initState();
+    _controller = CommentsController(context.read<CommentsRepository>())
+      ..replaceAll([widget.comment]);
+    _data = widget.comment.toJson();
+  }
+
+  @override
+  void didUpdateWidget(covariant CommentWidget oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.comment != widget.comment) {
+      _controller.replaceAll([widget.comment]);
+      _data = widget.comment.toJson();
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  int get _commentId => _data['id'] as int? ?? 0;
 
   Future<void> _react(int reactionId) async {
     final settings = context.read<SettingsService>();
@@ -43,47 +71,38 @@ class _CommentWidgetState extends State<CommentWidget> {
       _needAuth();
       return;
     }
-    final reactions =
-        (widget.comment['reactions'] as Map?) ??
-            {'counters': [], 'reactionId': 0};
-    widget.comment['reactions'] = reactions;
-    final snapshot = jsonEncode(reactions);
-    final before = (reactions['reactionId'] as int?) ?? 0;
-    final now = applyReactionToggle(reactions, reactionId);
+    final before = _controller.state.comments.single.reactions.selectedId;
+    final failureVersion = _controller.state.actionFailureVersion;
+    await _controller.toggleReaction(_commentId, reactionId);
+    if (!mounted) return;
+    final state = _controller.state;
+    _data = state.comments.single.toJson();
     setState(() {});
-    final added = now != 0 && now != before;
+    if (state.actionFailureVersion > failureVersion) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Реакция: ${state.actionFailure!.message}')),
+      );
+      return;
+    }
+    final selected = state.comments.single.reactions.selectedId;
+    final added = selected != 0 && selected != before;
     if (added) settings.recordReactionUse(reactionId);
     showReactionToast(context, reactionId, added: added);
-
-    final result = await DtfApi.setReaction(
-        id: _commentId,
-        isComment: true,
-        reactionId: reactionId,
-        settings: settings);
-    if (!mounted) return;
-    if (result['ok'] != true) {
-      widget.comment['reactions'] = jsonDecode(snapshot);
-      setState(() {});
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-            content: Text(
-                'Реакция: ${result['error'] ?? 'ошибка'}')),
-      );
-    }
+    widget.onReactionChanged?.call();
   }
 
   void _needAuth() {
-    ScaffoldMessenger.of(context)
-        .showSnackBar(const SnackBar(content: Text('Войди в аккаунт')));
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text('Войди в аккаунт')));
   }
 
-  int? get _postId => widget.comment['entry']?['id'] as int?;
-  bool get _isFavorited => widget.comment['isFavorited'] == true;
+  int? get _postId => _data['entry']?['id'] as int?;
+  bool get _isFavorited => _data['isFavorited'] == true;
 
   void _toast(String msg) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: Text(msg)));
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
   }
 
   void _copyLink() {
@@ -93,13 +112,14 @@ class _CommentWidgetState extends State<CommentWidget> {
       return;
     }
     Clipboard.setData(
-        ClipboardData(text: 'https://dtf.ru/$postId?comment=$_commentId'));
+      ClipboardData(text: 'https://dtf.ru/$postId?comment=$_commentId'),
+    );
     _toast('Ссылка скопирована');
   }
 
   void _copyText() {
     // Strip HTML tags so the clipboard gets clean plain text.
-    final raw = (widget.comment['text'] ?? '').toString();
+    final raw = (_data['text'] ?? '').toString();
     final text = raw.replaceAll(RegExp(r'<[^>]*>'), '').trim();
     if (text.isEmpty) {
       _toast('Пустой комментарий');
@@ -116,42 +136,45 @@ class _CommentWidgetState extends State<CommentWidget> {
       return;
     }
     final add = !_isFavorited;
-    // Optimistic: flip locally, revert on failure. type 2 = comment.
-    setState(() => widget.comment['isFavorited'] = add);
-    final ok = await DtfApi.toggleFavorite(_commentId, 2, add, settings);
+    final failureVersion = _controller.state.actionFailureVersion;
+    await _controller.toggleFavorite(_commentId);
     if (!mounted) return;
-    if (ok) {
-      _toast(add ? 'Добавлено в закладки' : 'Убрано из закладок');
-    } else {
-      setState(() => widget.comment['isFavorited'] = !add);
+    final state = _controller.state;
+    _data = state.comments.single.toJson();
+    setState(() {});
+    if (state.actionFailureVersion > failureVersion) {
       _toast('Не удалось изменить закладку');
+    } else {
+      _toast(add ? 'Добавлено в закладки' : 'Убрано из закладок');
     }
   }
 
   @override
   Widget build(BuildContext context) {
     final accent = Theme.of(context).colorScheme.primary;
-    final c = widget.comment;
+    final c = _data;
 
     final isRemoved = c['isRemoved'] == true;
     final isRemovedByMod = c['isRemovedByModerator'] == true;
     final isHidden = c['isHiddenByBan'] == true;
     final author = c['author'];
-    final level = (c['level'] ?? 0) as int;
+    final level = widget.depth ?? (c['level'] ?? 0) as int;
     final authorId = author?['id'] as int?;
     final userNote = context.select<SettingsService, String?>(
-        (s) => authorId != null ? s.userNotes[authorId] : null);
+      (s) => authorId != null ? s.userNotes[authorId] : null,
+    );
     final showDeleted = context.select<SettingsService, bool>(
-        (s) => s.showDeletedComments);
-    final text =
-        (c['text'] ?? '').replaceAll(RegExp(r'<[^>]*>'), '').trim();
+      (s) => s.showDeletedComments,
+    );
+    final text = (c['text'] ?? '').replaceAll(RegExp(r'<[^>]*>'), '').trim();
     final isEdited = c['isEdited'] == true;
     final media = c['media'] as List? ?? [];
 
     // Restored-from-archive data (deleted text recovered via dtfrandomizer).
     final restoredText = c['_restoredText'] as String?;
     final restoredMedia = c['_restoredMedia'] as List?;
-    final isRestored = (restoredText != null && restoredText.isNotEmpty) ||
+    final isRestored =
+        (restoredText != null && restoredText.isNotEmpty) ||
         (restoredMedia != null && restoredMedia.isNotEmpty);
     final editHistory = c['_edits'] as Map?;
 
@@ -161,11 +184,11 @@ class _CommentWidgetState extends State<CommentWidget> {
     if (isDeleted && !showDeleted && !isRestored) return const SizedBox();
 
     final myReaction = (c['reactions']?['reactionId'] as int?) ?? 0;
-    final reactions = (c['reactions']?['counters'] as List? ?? [])
-        .where((r) => (r['count'] ?? 0) > 0)
-        .toList()
-      ..sort((a, b) =>
-          (b['count'] as int).compareTo(a['count'] as int));
+    final reactions =
+        (c['reactions']?['counters'] as List? ?? [])
+            .where((r) => (r['count'] ?? 0) > 0)
+            .toList()
+          ..sort((a, b) => (b['count'] as int).compareTo(a['count'] as int));
 
     final counterLikes = c['likes']?['counterLikes'] ?? 0;
 
@@ -179,8 +202,7 @@ class _CommentWidgetState extends State<CommentWidget> {
     }
 
     return Container(
-      margin: EdgeInsets.only(
-          left: (level * 12.0).clamp(0, 48), bottom: 6),
+      margin: EdgeInsets.only(left: (level * 12.0).clamp(0, 48), bottom: 6),
       child: Container(
         padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
         decoration: BoxDecoration(
@@ -189,102 +211,130 @@ class _CommentWidgetState extends State<CommentWidget> {
           border: isRestored
               ? Border.all(color: const Color(0xFFE53935), width: 1.4)
               : level > 0
-                  ? Border(
-                      left: BorderSide(
-                          color: accent.withValues(alpha: 0.6), width: 2))
-                  : null,
+              ? Border(
+                  left: BorderSide(
+                    color: accent.withValues(alpha: 0.6),
+                    width: 2,
+                  ),
+                )
+              : null,
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             // Header
-            Row(children: [
-              Avatar.fromData(
-                author?['avatar'],
-                size: 24,
-                onTap: () => openUserProfile(context, author),
-              ),
-              const SizedBox(width: 7),
-              Expanded(
-                child: Row(children: [
-                  Flexible(
-                    child: GestureDetector(
-                      onTap: () => openUserProfile(context, author),
-                      child: Text(
-                        author?['name'] ?? 'Аноним',
-                        style: TextStyle(
-                            color: accent,
-                            fontWeight: FontWeight.bold,
-                            fontSize: 13),
-                        overflow: TextOverflow.ellipsis,
+            Row(
+              children: [
+                Avatar.fromData(
+                  author?['avatar'],
+                  size: 24,
+                  onTap: () => openUserProfile(context, author),
+                ),
+                const SizedBox(width: 7),
+                Expanded(
+                  child: Row(
+                    children: [
+                      Flexible(
+                        child: GestureDetector(
+                          onTap: () => openUserProfile(context, author),
+                          child: Text(
+                            author?['name'] ?? 'Аноним',
+                            style: TextStyle(
+                              color: accent,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 13,
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
                       ),
+                      AuthorBadge(author: author, size: 12),
+                      if (userNote != null) ...[
+                        const SizedBox(width: 5),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 4,
+                            vertical: 1,
+                          ),
+                          decoration: BoxDecoration(
+                            color: accent.withValues(alpha: 0.15),
+                            borderRadius: BorderRadius.circular(3),
+                          ),
+                          child: Text(
+                            userNote,
+                            style: TextStyle(color: accent, fontSize: 9),
+                          ),
+                        ),
+                      ],
+                      const SizedBox(width: 6),
+                      Text(
+                        _timeAgo(c['date']),
+                        style: TextStyle(
+                          color: AppColors.textMuted,
+                          fontSize: 11,
+                        ),
+                      ),
+                      if (isEdited) ...[
+                        const SizedBox(width: 4),
+                        Text(
+                          '✎',
+                          style: TextStyle(
+                            color: AppColors.textMuted,
+                            fontSize: 10,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+                if (isRestored)
+                  Text(
+                    'восстановлен',
+                    style: TextStyle(color: Color(0xFFE53935), fontSize: 10),
+                  )
+                else if (isRemovedByMod)
+                  Text(
+                    'мод',
+                    style: TextStyle(color: Colors.red, fontSize: 10),
+                  )
+                else if (isRemoved)
+                  Text(
+                    'удалён',
+                    style: TextStyle(color: Colors.orange, fontSize: 10),
+                  ),
+                const SizedBox(width: 4),
+                GestureDetector(
+                  onTap: () {
+                    if (widget.onToggleCollapse != null) {
+                      widget.onToggleCollapse!();
+                    } else {
+                      setState(() => _collapsed = !_collapsed);
+                    }
+                  },
+                  child: Icon(
+                    (widget.branchCollapsed ?? _collapsed)
+                        ? Icons.add
+                        : Icons.remove,
+                    color: widget.branchCollapsed == true
+                        ? accent
+                        : AppColors.textMuted,
+                    size: 16,
+                  ),
+                ),
+                // Restored (read-only) comments get no action menu.
+                if (!isRestored) ...[
+                  const SizedBox(width: 2),
+                  GestureDetector(
+                    onTap: () => _showMenu(context, author),
+                    child: Icon(
+                      Icons.more_horiz,
+                      color: AppColors.textMuted,
+                      size: 16,
                     ),
                   ),
-                  AuthorBadge(author: author, size: 12),
-                  if (userNote != null) ...[
-                    const SizedBox(width: 5),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 4, vertical: 1),
-                      decoration: BoxDecoration(
-                        color: accent.withValues(alpha: 0.15),
-                        borderRadius: BorderRadius.circular(3),
-                      ),
-                      child: Text(userNote,
-                          style: TextStyle(
-                              color: accent, fontSize: 9)),
-                    ),
-                  ],
-                  const SizedBox(width: 6),
-                  Text(_timeAgo(c['date']),
-                      style: TextStyle(
-                          color: AppColors.textMuted, fontSize: 11)),
-                  if (isEdited) ...[
-                    const SizedBox(width: 4),
-                    Text('✎',
-                        style: TextStyle(
-                            color: AppColors.textMuted, fontSize: 10)),
-                  ],
-                ]),
-              ),
-              if (isRestored)
-                const Text('восстановлен',
-                    style: TextStyle(color: Color(0xFFE53935), fontSize: 10))
-              else if (isRemovedByMod)
-                const Text('мод',
-                    style: TextStyle(color: Colors.red, fontSize: 10))
-              else if (isRemoved)
-                const Text('удалён',
-                    style: TextStyle(color: Colors.orange, fontSize: 10)),
-              const SizedBox(width: 4),
-              GestureDetector(
-                onTap: () {
-                  if (widget.onToggleCollapse != null) {
-                    widget.onToggleCollapse!();
-                  } else {
-                    setState(() => _collapsed = !_collapsed);
-                  }
-                },
-                child: Icon(
-                  (widget.branchCollapsed ?? _collapsed)
-                      ? Icons.add
-                      : Icons.remove,
-                  color: widget.branchCollapsed == true
-                      ? accent
-                      : AppColors.textMuted,
-                  size: 16,
-                ),
-              ),
-              // Restored (read-only) comments get no action menu.
-              if (!isRestored) ...[
-                const SizedBox(width: 2),
-                GestureDetector(
-                  onTap: () => _showMenu(context, author),
-                  child: Icon(Icons.more_horiz,
-                      color: AppColors.textMuted, size: 16),
-                ),
+                ],
               ],
-            ]),
+            ),
 
             if (!_collapsed && isRestored) ...[
               // ── Restored deleted comment: read-only text + media ──
@@ -300,24 +350,36 @@ class _CommentWidgetState extends State<CommentWidget> {
                 ),
               ...(restoredMedia ?? []).map((m) => MediaView(media: m)),
               const SizedBox(height: 6),
-              Row(children: [
-                const Icon(Icons.delete_outline,
-                    size: 12, color: Color(0xFFE53935)),
-                const SizedBox(width: 4),
-                const Text('Удалённый комментарий, восстановлен из архива',
-                    style: TextStyle(
-                        color: Color(0xFFB05050),
-                        fontSize: 10,
-                        fontStyle: FontStyle.italic)),
-                const Spacer(),
-                if (editHistory != null)
-                  GestureDetector(
-                    onTap: () => _showEditHistory(context, editHistory),
-                    child: const Text('История',
-                        style: TextStyle(
-                            color: Color(0xFFE53935), fontSize: 11)),
+              Row(
+                children: [
+                  Icon(
+                    Icons.delete_outline,
+                    size: 12,
+                    color: Color(0xFFE53935),
                   ),
-              ]),
+                  const SizedBox(width: 4),
+                  Text(
+                    'Удалённый комментарий, восстановлен из архива',
+                    style: TextStyle(
+                      color: Color(0xFFB05050),
+                      fontSize: 10,
+                      fontStyle: FontStyle.italic,
+                    ),
+                  ),
+                  const Spacer(),
+                  if (editHistory != null)
+                    GestureDetector(
+                      onTap: () => _showEditHistory(context, editHistory),
+                      child: Text(
+                        'История',
+                        style: TextStyle(
+                          color: Color(0xFFE53935),
+                          fontSize: 11,
+                        ),
+                      ),
+                    ),
+                ],
+              ),
             ] else if (!_collapsed) ...[
               const SizedBox(height: 6),
               if (text.isEmpty && media.isEmpty)
@@ -325,12 +387,13 @@ class _CommentWidgetState extends State<CommentWidget> {
                   isRemovedByMod
                       ? '🚫 Удалён модератором'
                       : isHidden
-                          ? '🔒 Скрыт'
-                          : '🗑 Удалён автором',
+                      ? '🔒 Скрыт'
+                      : '🗑 Удалён автором',
                   style: TextStyle(
-                      color: AppColors.textMuted,
-                      fontSize: 13,
-                      fontStyle: FontStyle.italic),
+                    color: AppColors.textMuted,
+                    fontSize: 13,
+                    fontStyle: FontStyle.italic,
+                  ),
                 )
               else if (text.isNotEmpty)
                 LinkifiedText(
@@ -355,35 +418,40 @@ class _CommentWidgetState extends State<CommentWidget> {
                     final mine = r['id'] == myReaction;
                     return BurstTap(
                       onTap: () => _react(r['id'] as int),
-                      onLongPress: () =>
-                          showReactionPicker(context, _react),
+                      onLongPress: () => showReactionPicker(context, _react),
                       burstColor: accent,
                       scale: 0.88,
                       child: AnimatedContainer(
                         duration: const Duration(milliseconds: 200),
                         curve: Curves.easeOut,
                         padding: const EdgeInsets.symmetric(
-                            horizontal: 7, vertical: 3),
+                          horizontal: 7,
+                          vertical: 3,
+                        ),
                         decoration: BoxDecoration(
                           color: mine
                               ? accent.withValues(alpha: 0.18)
                               : AppColors.bgElevated,
                           borderRadius: BorderRadius.circular(10),
                           border: mine
-                              ? Border.all(
-                                  color: accent, width: 1.2)
+                              ? Border.all(color: accent, width: 1.2)
                               : null,
                         ),
                         child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              ReactionIcon(
-                                  id: r['id'] as int, size: 14),
-                              const SizedBox(width: 3),
-                              Text('${r['count']}',
-                                  style:
-                                      const TextStyle(fontSize: 12)),
-                            ]),
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            ReactionIcon(
+                              id: r['id'] as int,
+                              size: 14,
+                              animated: false,
+                            ),
+                            const SizedBox(width: 3),
+                            Text(
+                              '${r['count']}',
+                              style: TextStyle(fontSize: 12),
+                            ),
+                          ],
+                        ),
                       ),
                     );
                   }),
@@ -392,35 +460,52 @@ class _CommentWidgetState extends State<CommentWidget> {
               ),
 
               const SizedBox(height: 4),
-              Row(children: [
-                Icon(Icons.thumb_up_outlined,
-                    size: 12, color: AppColors.textMuted),
-                const SizedBox(width: 3),
-                Text('$counterLikes',
+              Row(
+                children: [
+                  Icon(
+                    Icons.thumb_up_outlined,
+                    size: 12,
+                    color: AppColors.textMuted,
+                  ),
+                  const SizedBox(width: 3),
+                  Text(
+                    '$counterLikes',
                     style: TextStyle(
-                        color: AppColors.textMuted, fontSize: 11)),
-                if (editHistory != null) ...[
-                  const SizedBox(width: 12),
-                  GestureDetector(
-                    onTap: () => _showEditHistory(context, editHistory),
-                    child: Row(children: [
-                      Icon(Icons.history,
-                          size: 13, color: AppColors.textMuted),
-                      const SizedBox(width: 3),
-                      Text('изменён', style: TextStyle(
-                          color: accent, fontSize: 11)),
-                    ]),
+                      color: AppColors.textMuted,
+                      fontSize: 11,
+                    ),
                   ),
+                  if (editHistory != null) ...[
+                    const SizedBox(width: 12),
+                    GestureDetector(
+                      onTap: () => _showEditHistory(context, editHistory),
+                      child: Row(
+                        children: [
+                          Icon(
+                            Icons.history,
+                            size: 13,
+                            color: AppColors.textMuted,
+                          ),
+                          const SizedBox(width: 3),
+                          Text(
+                            'изменён',
+                            style: TextStyle(color: accent, fontSize: 11),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                  const Spacer(),
+                  if (widget.onReply != null)
+                    GestureDetector(
+                      onTap: widget.onReply,
+                      child: Text(
+                        'Ответить',
+                        style: TextStyle(color: accent, fontSize: 11),
+                      ),
+                    ),
                 ],
-                const Spacer(),
-                if (widget.onReply != null)
-                  GestureDetector(
-                    onTap: widget.onReply,
-                    child: Text('Ответить',
-                        style: TextStyle(
-                            color: accent, fontSize: 11)),
-                  ),
-              ]),
+              ),
             ],
           ],
         ),
@@ -464,16 +549,20 @@ class _CommentWidgetState extends State<CommentWidget> {
               width: 40,
               height: 4,
               decoration: BoxDecoration(
-                  color: AppColors.textMuted,
-                  borderRadius: BorderRadius.circular(2)),
+                color: AppColors.textMuted,
+                borderRadius: BorderRadius.circular(2),
+              ),
             ),
             Padding(
               padding: EdgeInsets.symmetric(vertical: 12),
-              child: Text('История изменений',
-                  style: TextStyle(
-                      color: AppColors.textPrimary,
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold)),
+              child: Text(
+                'История изменений',
+                style: TextStyle(
+                  color: AppColors.textPrimary,
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
             ),
             Expanded(
               child: ListView.builder(
@@ -482,9 +571,7 @@ class _CommentWidgetState extends State<CommentWidget> {
                 itemCount: versions.length,
                 itemBuilder: (_, i) {
                   final v = versions[i];
-                  final label = i == 0
-                      ? 'Исходная версия'
-                      : 'Изменение $i';
+                  final label = i == 0 ? 'Исходная версия' : 'Изменение $i';
                   return Container(
                     margin: const EdgeInsets.only(bottom: 10),
                     padding: const EdgeInsets.all(12),
@@ -492,35 +579,47 @@ class _CommentWidgetState extends State<CommentWidget> {
                       color: AppColors.bgElevated.withValues(alpha: 0.4),
                       borderRadius: BorderRadius.circular(10),
                       border: Border(
-                          left: BorderSide(
-                              color: i == 0
-                                  ? AppColors.textMuted
-                                  : Theme.of(ctx).colorScheme.primary,
-                              width: 2)),
+                        left: BorderSide(
+                          color: i == 0
+                              ? AppColors.textMuted
+                              : Theme.of(ctx).colorScheme.primary,
+                          width: 2,
+                        ),
+                      ),
                     ),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Row(children: [
-                          Text(label,
+                        Row(
+                          children: [
+                            Text(
+                              label,
                               style: TextStyle(
-                                  color: AppColors.textSecondary,
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w600)),
-                          const Spacer(),
-                          Text(timeOf(v),
+                                color: AppColors.textSecondary,
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            const Spacer(),
+                            Text(
+                              timeOf(v),
                               style: TextStyle(
-                                  color: AppColors.textMuted, fontSize: 11)),
-                        ]),
+                                color: AppColors.textMuted,
+                                fontSize: 11,
+                              ),
+                            ),
+                          ],
+                        ),
                         const SizedBox(height: 6),
                         SelectableText(
                           (v['text'] ?? '').toString().isEmpty
                               ? '(пустой текст)'
                               : v['text'].toString(),
                           style: TextStyle(
-                              color: AppColors.textPrimary,
-                              fontSize: 13,
-                              height: 1.35),
+                            color: AppColors.textPrimary,
+                            fontSize: 13,
+                            height: 1.35,
+                          ),
                         ),
                       ],
                     ),
@@ -539,7 +638,7 @@ class _CommentWidgetState extends State<CommentWidget> {
   Future<void> _showEditDialog() async {
     final postId = _postId;
     if (postId == null) return;
-    final raw = (widget.comment['text'] ?? '').toString();
+    final raw = (_data['text'] ?? '').toString();
     final plain = raw.replaceAll(RegExp(r'<[^>]*>'), '').trim();
     final ctrl = TextEditingController(text: plain);
 
@@ -547,25 +646,26 @@ class _CommentWidgetState extends State<CommentWidget> {
       context: context,
       builder: (dctx) => AlertDialog(
         backgroundColor: AppColors.bgCard,
-        title: Text('Редактировать комментарий',
-            style: TextStyle(color: AppColors.textPrimary, fontSize: 16)),
+        title: Text(
+          'Редактировать комментарий',
+          style: TextStyle(color: AppColors.textPrimary, fontSize: 16),
+        ),
         content: TextField(
           controller: ctrl,
           autofocus: true,
           maxLines: null,
           minLines: 3,
           style: TextStyle(color: AppColors.textPrimary),
-          decoration:
-              const InputDecoration(hintText: 'Текст комментария...'),
+          decoration: const InputDecoration(hintText: 'Текст комментария...'),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(dctx),
-            child: const Text('Отмена'),
+            child: Text('Отмена'),
           ),
           TextButton(
             onPressed: () => Navigator.pop(dctx, ctrl.text.trim()),
-            child: const Text('Сохранить'),
+            child: Text('Сохранить'),
           ),
         ],
       ),
@@ -575,33 +675,35 @@ class _CommentWidgetState extends State<CommentWidget> {
       return;
     }
 
-    final settings = context.read<SettingsService>();
-    final result = await DtfApi.editComment(
+    final media = (_data['media'] as List? ?? const [])
+        .whereType<Map>()
+        .map((item) => Map<String, dynamic>.from(item))
+        .toList(growable: false);
+    final failureVersion = _controller.state.actionFailureVersion;
+    await _controller.edit(
       commentId: _commentId,
-      entryId: postId,
+      postId: postId,
       text: newText,
-      attachments: widget.comment['media'] as List?,
-      settings: settings,
+      attachments: media,
     );
     if (!mounted) return;
-    if (result['ok'] == true) {
-      setState(() {
-        final updated = result['comment'];
-        widget.comment['text'] = (updated is Map && updated['text'] != null)
-            ? updated['text']
-            : '<p>$newText</p>';
-        widget.comment['isEdited'] = true;
-      });
-      _toast('Комментарий изменён');
-    } else {
-      _toast('Не удалось: ${result['error'] ?? 'ошибка'}');
+    final state = _controller.state;
+    if (state.actionFailureVersion > failureVersion) {
+      _toast('Не удалось: ${state.actionFailure!.message}');
+      return;
     }
+    setState(() {
+      _data = state.comments.single.toJson();
+      _data['isEdited'] = true;
+    });
+    widget.onReactionChanged?.call();
+    _toast('Комментарий изменён');
   }
 
   // I own this comment (its author is the logged-in user).
   bool get _isMyComment {
     final settings = context.read<SettingsService>();
-    final authorId = widget.comment['author']?['id'] as int?;
+    final authorId = _data['author']?['id'] as int?;
     return settings.myUserId != null && settings.myUserId == authorId;
   }
 
@@ -609,7 +711,7 @@ class _CommentWidgetState extends State<CommentWidget> {
   // 1 minute otherwise (same rule as the official app / site).
   bool get _canEditNow {
     if (!_isMyComment) return false;
-    final date = widget.comment['date'];
+    final date = _data['date'];
     if (date is! int) return false;
     final settings = context.read<SettingsService>();
     final ageSec = DateTime.now().millisecondsSinceEpoch ~/ 1000 - date;
@@ -621,8 +723,7 @@ class _CommentWidgetState extends State<CommentWidget> {
     final settings = ctx.read<SettingsService>();
     final authorId = author?['id'] as int?;
     final authorName = author?['name'] ?? '';
-    final currentNote =
-        authorId != null ? settings.userNotes[authorId] : null;
+    final currentNote = authorId != null ? settings.userNotes[authorId] : null;
     final canEdit = _canEditNow;
 
     showModalBottomSheet(
@@ -634,43 +735,58 @@ class _CommentWidgetState extends State<CommentWidget> {
             const SizedBox(height: 12),
             if (canEdit)
               ListTile(
-                leading: Icon(Icons.edit_outlined,
-                    color: AppColors.textPrimary),
-                title: Text('Редактировать комментарий',
-                    style: TextStyle(color: AppColors.textPrimary)),
+                leading: Icon(
+                  Icons.edit_outlined,
+                  color: AppColors.textPrimary,
+                ),
+                title: Text(
+                  'Редактировать комментарий',
+                  style: TextStyle(color: AppColors.textPrimary),
+                ),
                 onTap: () {
                   Navigator.pop(ctx);
                   _showEditDialog();
                 },
               ),
             ListTile(
-              leading: Icon(Icons.add_reaction_outlined,
-                  color: AppColors.textPrimary),
-              title: Text('Поставить реакцию',
-                  style: TextStyle(color: AppColors.textPrimary)),
+              leading: Icon(
+                Icons.add_reaction_outlined,
+                color: AppColors.textPrimary,
+              ),
+              title: Text(
+                'Поставить реакцию',
+                style: TextStyle(color: AppColors.textPrimary),
+              ),
               onTap: () {
                 Navigator.pop(ctx);
                 showReactionPicker(ctx, _react);
               },
             ),
             ListTile(
-              leading: Icon(Icons.emoji_emotions_outlined,
-                  color: AppColors.textPrimary),
-              title: Text('Кто поставил реакцию',
-                  style: TextStyle(color: AppColors.textPrimary)),
+              leading: Icon(
+                Icons.emoji_emotions_outlined,
+                color: AppColors.textPrimary,
+              ),
+              title: Text(
+                'Кто поставил реакцию',
+                style: TextStyle(color: AppColors.textPrimary),
+              ),
               onTap: () {
                 Navigator.pop(ctx);
                 showReactionUsers(
-                    context: ctx,
-                    id: _commentId,
-                    isComment: true,
-                    settings: settings);
+                  context: ctx,
+                  id: _commentId,
+                  isComment: true,
+                  settings: settings,
+                );
               },
             ),
             ListTile(
               leading: Icon(Icons.link, color: AppColors.textPrimary),
-              title: Text('Скопировать ссылку',
-                  style: TextStyle(color: AppColors.textPrimary)),
+              title: Text(
+                'Скопировать ссылку',
+                style: TextStyle(color: AppColors.textPrimary),
+              ),
               onTap: () {
                 Navigator.pop(ctx);
                 _copyLink();
@@ -678,20 +794,27 @@ class _CommentWidgetState extends State<CommentWidget> {
             ),
             ListTile(
               leading: Icon(
-                  _isFavorited ? Icons.bookmark : Icons.bookmark_border,
-                  color: AppColors.textPrimary),
-              title: Text(_isFavorited ? 'Убрать из закладок' : 'В закладки',
-                  style: TextStyle(color: AppColors.textPrimary)),
+                _isFavorited ? Icons.bookmark : Icons.bookmark_border,
+                color: AppColors.textPrimary,
+              ),
+              title: Text(
+                _isFavorited ? 'Убрать из закладок' : 'В закладки',
+                style: TextStyle(color: AppColors.textPrimary),
+              ),
               onTap: () {
                 Navigator.pop(ctx);
                 _toggleBookmark();
               },
             ),
             ListTile(
-              leading: Icon(Icons.content_copy_outlined,
-                  color: AppColors.textPrimary),
-              title: Text('Копировать текст',
-                  style: TextStyle(color: AppColors.textPrimary)),
+              leading: Icon(
+                Icons.content_copy_outlined,
+                color: AppColors.textPrimary,
+              ),
+              title: Text(
+                'Копировать текст',
+                style: TextStyle(color: AppColors.textPrimary),
+              ),
               onTap: () {
                 Navigator.pop(ctx);
                 _copyText();
@@ -699,19 +822,25 @@ class _CommentWidgetState extends State<CommentWidget> {
             ),
             if (authorId != null)
               ListTile(
-                leading: Icon(Icons.label_outline,
-                    color: AppColors.textPrimary),
+                leading: Icon(
+                  Icons.label_outline,
+                  color: AppColors.textPrimary,
+                ),
                 title: Text(
                   currentNote != null
                       ? 'Изменить заметку для $authorName'
                       : 'Добавить заметку для $authorName',
-                  style:
-                      TextStyle(color: AppColors.textPrimary),
+                  style: TextStyle(color: AppColors.textPrimary),
                 ),
                 onTap: () {
                   Navigator.pop(ctx);
                   _showNoteDialog(
-                      ctx, settings, authorId, authorName, currentNote);
+                    ctx,
+                    settings,
+                    authorId,
+                    authorName,
+                    currentNote,
+                  );
                 },
               ),
             const SizedBox(height: 8),
@@ -721,8 +850,13 @@ class _CommentWidgetState extends State<CommentWidget> {
     );
   }
 
-  void _showNoteDialog(BuildContext ctx, SettingsService settings,
-      int userId, String name, String? current) {
+  void _showNoteDialog(
+    BuildContext ctx,
+    SettingsService settings,
+    int userId,
+    String name,
+    String? current,
+  ) {
     final ctrl = TextEditingController(text: current ?? '');
     showDialog(
       context: ctx,
@@ -732,8 +866,7 @@ class _CommentWidgetState extends State<CommentWidget> {
           controller: ctrl,
           autofocus: true,
           style: TextStyle(color: AppColors.textPrimary),
-          decoration:
-              const InputDecoration(hintText: 'Напиши заметку...'),
+          decoration: const InputDecoration(hintText: 'Напиши заметку...'),
         ),
         actions: [
           if (current != null)
@@ -742,19 +875,18 @@ class _CommentWidgetState extends State<CommentWidget> {
                 settings.setUserNote(userId, '');
                 Navigator.pop(ctx);
               },
-              child: const Text('Удалить',
-                  style: TextStyle(color: Colors.red)),
+              child: Text('Удалить', style: TextStyle(color: Colors.red)),
             ),
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: const Text('Отмена'),
+            child: Text('Отмена'),
           ),
           TextButton(
             onPressed: () {
               settings.setUserNote(userId, ctrl.text);
               Navigator.pop(ctx);
             },
-            child: const Text('Сохранить'),
+            child: Text('Сохранить'),
           ),
         ],
       ),
@@ -763,8 +895,7 @@ class _CommentWidgetState extends State<CommentWidget> {
 
   String _timeAgo(dynamic timestamp) {
     if (timestamp == null) return '';
-    final date =
-        DateTime.fromMillisecondsSinceEpoch((timestamp as int) * 1000);
+    final date = DateTime.fromMillisecondsSinceEpoch((timestamp as int) * 1000);
     final diff = DateTime.now().difference(date);
     if (diff.inMinutes < 1) return 'только что';
     if (diff.inMinutes < 60) return '${diff.inMinutes}м';

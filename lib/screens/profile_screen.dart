@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../api/dtf_api.dart';
+import '../core/api/result.dart';
+import '../features/profile/data/profile_repository.dart';
+import '../features/profile/presentation/profile_controller.dart';
 import '../services/settings_service.dart';
 import '../theme.dart';
 import '../widgets/avatar.dart';
@@ -19,13 +21,28 @@ class ProfileScreen extends StatefulWidget {
 }
 
 class _ProfileScreenState extends State<ProfileScreen> {
-  dynamic _user;
+  late final ProfileController _controller;
+  Map<String, dynamic>? get _user => _controller.subsite?.rawJson;
   bool _loading = true;
 
   @override
   void initState() {
     super.initState();
+    _controller = ProfileController(context.read<ProfileRepository>())
+      ..addListener(_onChanged);
     _checkAuth();
+  }
+
+  void _onChanged() {
+    if (mounted) setState(() {});
+  }
+
+  @override
+  void dispose() {
+    _controller
+      ..removeListener(_onChanged)
+      ..dispose();
+    super.dispose();
   }
 
   Future<void> _checkAuth() async {
@@ -35,30 +52,27 @@ class _ProfileScreenState extends State<ProfileScreen> {
       setState(() => _loading = false);
       return;
     }
-    try {
-      final user = await DtfApi.getMe(settings);
-      if (mounted) {
-        setState(() {
-          _user = user;
-          _loading = false;
-        });
-      }
-    } catch (_) {
-      if (mounted) setState(() => _loading = false);
-    }
+    await _controller.load();
+    if (mounted) setState(() => _loading = false);
   }
 
   Future<void> _logout() async {
-    await context.read<SettingsService>().clearToken();
-    setState(() => _user = null);
+    try {
+      await context.read<SettingsService>().clearToken();
+      if (mounted) _controller.clear();
+    } on AuthStorageException catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(error.message)));
+      }
+    }
   }
 
   void _changeBadge() {
-    final settings = context.read<SettingsService>();
     showBadgePicker(context, (badgeId) async {
-      setState(() => _user['badgeId'] = badgeId);
-      final ok = await DtfApi.setBadge(badgeId, settings);
-      if (!ok && mounted) {
+      final result = await _controller.setBadge(badgeId);
+      if (result is Failure<void> && mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Не удалось сменить бейджик')),
         );
@@ -100,20 +114,27 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        Icon(Icons.account_circle_outlined,
-                            color: AppColors.textMuted, size: 72),
+                        Icon(
+                          Icons.account_circle_outlined,
+                          color: AppColors.textMuted,
+                          size: 72,
+                        ),
                         const SizedBox(height: 16),
-                        Text('Ты не вошёл в аккаунт',
-                            style: TextStyle(
-                                color: AppColors.textPrimary,
-                                fontSize: 18)),
+                        Text(
+                          'Ты не вошёл в аккаунт',
+                          style: TextStyle(
+                            color: AppColors.textPrimary,
+                            fontSize: 18,
+                          ),
+                        ),
                         const SizedBox(height: 8),
                         Text(
                           'Войди, чтобы видеть свою ленту, уведомления и профиль',
                           textAlign: TextAlign.center,
                           style: TextStyle(
-                              color: AppColors.textSecondary,
-                              fontSize: 14),
+                            color: AppColors.textSecondary,
+                            fontSize: 14,
+                          ),
                         ),
                         const SizedBox(height: 28),
                         ElevatedButton(
@@ -123,10 +144,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
                             foregroundColor: Colors.white,
                             minimumSize: const Size(200, 48),
                           ),
-                          child: const Text('Войти',
-                              style: TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 16)),
+                          child: Text(
+                            'Войти',
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 16,
+                            ),
+                          ),
                         ),
                       ],
                     ),
@@ -134,14 +158,17 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 ),
               ),
               ListTile(
-                leading: Icon(Icons.settings_outlined,
-                    color: AppColors.textMuted),
-                title: Text('Настройки приложения',
-                    style: TextStyle(color: AppColors.textPrimary)),
+                leading: Icon(
+                  Icons.settings_outlined,
+                  color: AppColors.textMuted,
+                ),
+                title: Text(
+                  'Настройки приложения',
+                  style: TextStyle(color: AppColors.textPrimary),
+                ),
                 onTap: () => Navigator.push(
                   context,
-                  MaterialPageRoute(
-                      builder: (_) => const SettingsScreen()),
+                  MaterialPageRoute(builder: (_) => const SettingsScreen()),
                 ),
               ),
               const SizedBox(height: 8),
@@ -155,14 +182,18 @@ class _ProfileScreenState extends State<ProfileScreen> {
       [
         Icons.bookmark_border,
         'Закладки',
-        () => Navigator.push(context,
-            MaterialPageRoute(builder: (_) => const BookmarksScreen()))
+        () => Navigator.push(
+          context,
+          MaterialPageRoute(builder: (_) => const BookmarksScreen()),
+        ),
       ],
       [
         Icons.edit_outlined,
         'Черновики',
-        () => Navigator.push(context,
-            MaterialPageRoute(builder: (_) => const DraftsScreen()))
+        () => Navigator.push(
+          context,
+          MaterialPageRoute(builder: (_) => const DraftsScreen()),
+        ),
       ],
       [Icons.currency_ruble, 'Донаты', null],
       [Icons.emoji_events_outlined, 'Ачивки', null],
@@ -175,7 +206,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
         bottom: false,
         child: ListView(
           padding: EdgeInsets.only(
-              bottom: MediaQuery.of(context).padding.bottom + 86),
+            bottom: MediaQuery.of(context).padding.bottom + 86,
+          ),
           children: [
             GestureDetector(
               onTap: () => openUserProfile(context, _user),
@@ -183,65 +215,81 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 margin: const EdgeInsets.fromLTRB(12, 8, 12, 0),
                 decoration: glassCardDecoration(),
                 padding: const EdgeInsets.all(16),
-                child: Row(children: [
-                  Avatar(
-                    uuid: _user?['avatar']?['data']?['uuid'],
-                    size: 60,
-                    animated:
-                        _user?['avatar']?['data']?['type'] == 'gif',
-                  ),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    child: Column(
+                child: Row(
+                  children: [
+                    Avatar(
+                      uuid: _user?['avatar']?['data']?['uuid'],
+                      size: 60,
+                      animated: _user?['avatar']?['data']?['type'] == 'gif',
+                    ),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Row(children: [
-                            Flexible(
-                              child: Text(
-                                _user?['name'] ?? '',
-                                style: TextStyle(
+                          Row(
+                            children: [
+                              Flexible(
+                                child: Text(
+                                  _user?['name'] ?? '',
+                                  style: TextStyle(
                                     color: AppColors.textPrimary,
                                     fontSize: 18,
-                                    fontWeight: FontWeight.bold),
-                                overflow: TextOverflow.ellipsis,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
                               ),
-                            ),
-                            if (_user?['isPlus'] == true) ...[
-                              const SizedBox(width: 6),
-                              GestureDetector(
-                                onTap: _changeBadge,
-                                child: _user?['badgeId'] != null
-                                    ? BadgeIcon(
-                                        badgeId: _user['badgeId']
-                                            as String?,
-                                        size: 20)
-                                    : const Text('💎',
-                                        style:
-                                            TextStyle(fontSize: 14)),
+                              if (_user?['isPlus'] == true) ...[
+                                const SizedBox(width: 6),
+                                GestureDetector(
+                                  onTap: _changeBadge,
+                                  child: _user?['badgeId'] != null
+                                      ? BadgeIcon(
+                                          badgeId: _user!['badgeId'] as String?,
+                                          size: 20,
+                                        )
+                                      : Text(
+                                          '💎',
+                                          style: TextStyle(fontSize: 14),
+                                        ),
+                                ),
+                              ],
+                              const Spacer(),
+                              Icon(
+                                Icons.chevron_right,
+                                color: AppColors.textMuted,
+                                size: 20,
                               ),
                             ],
-                            const Spacer(),
-                            Icon(Icons.chevron_right,
-                                color: AppColors.textMuted, size: 20),
-                          ]),
+                          ),
                           if (_user?['nickname'] != null)
-                            Text('@${_user['nickname']}',
-                                style: TextStyle(
-                                    color: AppColors.textMuted,
-                                    fontSize: 13)),
+                            Text(
+                              '@${_user!['nickname']}',
+                              style: TextStyle(
+                                color: AppColors.textMuted,
+                                fontSize: 13,
+                              ),
+                            ),
                           const SizedBox(height: 6),
-                          Row(children: [
-                            _statChip(
+                          Row(
+                            children: [
+                              _statChip(
                                 '${_user?['counters']?['entries'] ?? 0}',
-                                'постов'),
-                            const SizedBox(width: 16),
-                            _statChip(
+                                'постов',
+                              ),
+                              const SizedBox(width: 16),
+                              _statChip(
                                 '${_user?['counters']?['karma'] ?? 0}',
-                                'карма'),
-                          ]),
-                        ]),
-                  ),
-                ]),
+                                'карма',
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
             const SizedBox(height: 8),
@@ -250,21 +298,35 @@ class _ProfileScreenState extends State<ProfileScreen> {
               decoration: glassCardDecoration(),
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(AppRadius.card),
-                child: Column(
-                children: [
-                  ...menuItems.map((item) => ListTile(
-                        leading: Icon(item[0] as IconData,
-                            color: AppColors.textSecondary, size: 22),
-                        title: Text(item[1] as String,
+                child: Material(
+                  type: MaterialType.transparency,
+                  child: Column(
+                    children: [
+                      ...menuItems.map(
+                        (item) => ListTile(
+                          leading: Icon(
+                            item[0] as IconData,
+                            color: AppColors.textSecondary,
+                            size: 22,
+                          ),
+                          title: Text(
+                            item[1] as String,
                             style: TextStyle(
-                                color: AppColors.textPrimary)),
-                        trailing: Icon(Icons.chevron_right,
-                            color: AppColors.textMuted, size: 20),
-                        onTap: item[2] as VoidCallback?,
-                      )),
-                ],
-                ),  // Column
-              ),    // ClipRRect
+                              color: AppColors.textPrimary,
+                            ),
+                          ),
+                          trailing: Icon(
+                            Icons.chevron_right,
+                            color: AppColors.textMuted,
+                            size: 20,
+                          ),
+                          onTap: item[2] as VoidCallback?,
+                        ),
+                      ),
+                    ],
+                  ), // Column
+                ), // Material
+              ), // ClipRRect
             ),
             const SizedBox(height: 8),
             Container(
@@ -272,59 +334,79 @@ class _ProfileScreenState extends State<ProfileScreen> {
               decoration: glassCardDecoration(),
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(AppRadius.card),
-                child: Column(
-                children: [
-                  ListTile(
-                    leading: Icon(Icons.settings_outlined,
-                        color: AppColors.textSecondary, size: 22),
-                    title: Text('Настройки приложения',
-                        style: TextStyle(color: AppColors.textPrimary)),
-                    trailing: Icon(Icons.chevron_right,
-                        color: AppColors.textMuted, size: 20),
-                    onTap: () => Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                          builder: (_) => const SettingsScreen()),
-                    ),
-                  ),
-                  const Divider(height: 1, indent: 56),
-                  ListTile(
-                    leading: const Icon(Icons.logout,
-                        color: Colors.red, size: 22),
-                    title: const Text('Выйти',
-                        style: TextStyle(color: Colors.red)),
-                    onTap: () => showDialog(
-                      context: context,
-                      builder: (_) => AlertDialog(
-                        title: const Text('Выйти из аккаунта?'),
-                        actions: [
-                          TextButton(
-                            onPressed: () => Navigator.pop(context),
-                            child: const Text('Отмена'),
+                child: Material(
+                  type: MaterialType.transparency,
+                  child: Column(
+                    children: [
+                      ListTile(
+                        leading: Icon(
+                          Icons.settings_outlined,
+                          color: AppColors.textSecondary,
+                          size: 22,
+                        ),
+                        title: Text(
+                          'Настройки приложения',
+                          style: TextStyle(color: AppColors.textPrimary),
+                        ),
+                        trailing: Icon(
+                          Icons.chevron_right,
+                          color: AppColors.textMuted,
+                          size: 20,
+                        ),
+                        onTap: () => Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => const SettingsScreen(),
                           ),
-                          TextButton(
-                            onPressed: () {
-                              Navigator.pop(context);
-                              _logout();
-                            },
-                            child: const Text('Выйти',
-                                style: TextStyle(color: Colors.red)),
-                          ),
-                        ],
+                        ),
                       ),
-                    ),
-                  ),
-                ],
-                ),  // Column
-              ),    // ClipRRect
+                      const Divider(height: 1, indent: 56),
+                      ListTile(
+                        leading: Icon(
+                          Icons.logout,
+                          color: Colors.red,
+                          size: 22,
+                        ),
+                        title: Text(
+                          'Выйти',
+                          style: TextStyle(color: Colors.red),
+                        ),
+                        onTap: () => showDialog(
+                          context: context,
+                          builder: (_) => AlertDialog(
+                            title: Text('Выйти из аккаунта?'),
+                            actions: [
+                              TextButton(
+                                onPressed: () => Navigator.pop(context),
+                                child: Text('Отмена'),
+                              ),
+                              TextButton(
+                                onPressed: () {
+                                  Navigator.pop(context);
+                                  _logout();
+                                },
+                                child: Text(
+                                  'Выйти',
+                                  style: TextStyle(color: Colors.red),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
+                  ), // Column
+                ), // Material
+              ), // ClipRRect
             ),
             const SizedBox(height: 16),
             Center(
               child: Text(
                 'DTF by Vino',
                 style: TextStyle(
-                    color: AppColors.textMuted.withValues(alpha: 0.5),
-                    fontSize: 12),
+                  color: AppColors.textMuted.withValues(alpha: 0.5),
+                  fontSize: 12,
+                ),
               ),
             ),
             const SizedBox(height: 24),
@@ -338,14 +420,18 @@ class _ProfileScreenState extends State<ProfileScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(value,
-            style: TextStyle(
-                color: AppColors.textPrimary,
-                fontSize: 15,
-                fontWeight: FontWeight.bold)),
-        Text(label,
-            style: TextStyle(
-                color: AppColors.textMuted, fontSize: 12)),
+        Text(
+          value,
+          style: TextStyle(
+            color: AppColors.textPrimary,
+            fontSize: 15,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        Text(
+          label,
+          style: TextStyle(color: AppColors.textMuted, fontSize: 12),
+        ),
       ],
     );
   }

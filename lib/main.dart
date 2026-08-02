@@ -2,7 +2,34 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
-import 'api/dtf_api.dart';
+import 'package:http/http.dart' as http;
+
+import 'core/api/api_client.dart';
+import 'core/api/http_api_client.dart';
+import 'features/auth/data/auth_repository.dart';
+import 'features/auth/data/dtf_auth_repository.dart';
+import 'features/bookmarks/data/bookmarks_repository.dart';
+import 'features/bookmarks/data/dtf_bookmarks_repository.dart';
+import 'features/chat/data/chat_repository.dart';
+import 'features/chat/data/dtf_chat_repository.dart';
+import 'features/comments/data/comments_repository.dart';
+import 'features/comments/data/dtf_comments_repository.dart';
+import 'features/editor/data/dtf_editor_repository.dart';
+import 'features/editor/data/editor_repository.dart';
+import 'features/feed/data/dtf_feed_repository.dart';
+import 'features/feed/data/feed_repository.dart';
+import 'features/notifications/data/dtf_notifications_repository.dart';
+import 'features/notifications/data/notifications_repository.dart';
+import 'features/posts/data/dtf_post_repository.dart';
+import 'features/profile/data/dtf_profile_repository.dart';
+import 'features/profile/data/profile_repository.dart';
+import 'features/posts/data/post_repository.dart';
+import 'features/search/data/dtf_search_repository.dart';
+import 'features/search/data/search_repository.dart';
+import 'services/auth_service.dart';
+import 'services/current_user_service.dart';
+import 'services/notification_service.dart';
+import 'services/preferences_service.dart';
 import 'services/settings_service.dart';
 import 'services/reactions_registry.dart';
 import 'theme.dart';
@@ -19,13 +46,76 @@ final navigatorKey = GlobalKey<NavigatorState>();
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await SystemChrome.setPreferredOrientations(
-      [DeviceOrientation.portraitUp, DeviceOrientation.portraitDown]);
+  await SystemChrome.setPreferredOrientations([
+    DeviceOrientation.portraitUp,
+    DeviceOrientation.portraitDown,
+  ]);
   final settings = await SettingsService.load();
   ReactionsRegistry.refresh();
   runApp(
-    ChangeNotifierProvider.value(
-      value: settings,
+    MultiProvider(
+      providers: [
+        ChangeNotifierProvider.value(value: settings),
+        ChangeNotifierProvider<AuthService>.value(value: settings.auth),
+        ChangeNotifierProvider<PreferencesService>.value(
+          value: settings.preferences,
+        ),
+        ChangeNotifierProvider<CurrentUserService>.value(
+          value: settings.currentUser,
+        ),
+        ChangeNotifierProvider<NotificationService>.value(
+          value: settings.notifications,
+        ),
+        Provider<ApiClient>(
+          create: (context) => HttpApiClient(
+            http.Client(),
+            () => context.read<SettingsService>().token,
+          ),
+          dispose: (_, client) => client.close(),
+        ),
+        Provider<UploadApiClient>(
+          create: (context) => context.read<ApiClient>() as UploadApiClient,
+        ),
+        Provider<AuthRepository>(
+          create: (_) => DtfAuthRepository(http.Client()),
+          dispose: (_, repository) => repository.close(),
+        ),
+        Provider<EditorRepository>(
+          create: (context) => DtfEditorRepository(
+            context.read<ApiClient>(),
+            context.read<UploadApiClient>(),
+          ),
+        ),
+        Provider<FeedRepository>(
+          create: (context) => DtfFeedRepository(
+            context.read<ApiClient>(),
+            context.read<SettingsService>(),
+          ),
+        ),
+        Provider<PostRepository>(
+          create: (context) => DtfPostRepository(context.read<ApiClient>()),
+        ),
+        Provider<CommentsRepository>(
+          create: (context) => DtfCommentsRepository(context.read<ApiClient>()),
+        ),
+        Provider<BookmarksRepository>(
+          create: (context) =>
+              DtfBookmarksRepository(context.read<ApiClient>()),
+        ),
+        Provider<ChatRepository>(
+          create: (context) => DtfChatRepository(context.read<ApiClient>()),
+        ),
+        Provider<SearchRepository>(
+          create: (context) => DtfSearchRepository(context.read<ApiClient>()),
+        ),
+        Provider<ProfileRepository>(
+          create: (context) => DtfProfileRepository(context.read<ApiClient>()),
+        ),
+        Provider<NotificationsRepository>(
+          create: (context) =>
+              DtfNotificationsRepository(context.read<ApiClient>()),
+        ),
+      ],
       child: const DtfApp(),
     ),
   );
@@ -85,15 +175,28 @@ class _MainScreenState extends State<MainScreen> {
     _pollNotifications();
     _loadCurrentUser();
     _pollTimer = Timer.periodic(
-        const Duration(seconds: 60), (_) => _pollNotifications());
+      const Duration(seconds: 60),
+      (_) => _pollNotifications(),
+    );
+
+    final storageError = context.read<SettingsService>().authStorageError;
+    if (storageError != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(storageError)));
+      });
+    }
   }
 
   Future<void> _loadCurrentUser() async {
     final settings = context.read<SettingsService>();
     if (!settings.isLoggedIn) return;
-    final me = await DtfApi.getMe(settings);
-    if (mounted && me is Map) {
-      settings.setCurrentUser(me['id'] as int?, me['isPlus'] == true);
+    final result = await context.read<ProfileRepository>().loadMe();
+    final me = result.valueOrNull;
+    if (mounted && me != null) {
+      settings.setCurrentUser(me.id, me.rawJson['isPlus'] == true);
     }
   }
 
@@ -107,8 +210,9 @@ class _MainScreenState extends State<MainScreen> {
     final settings = context.read<SettingsService>();
     if (!settings.isLoggedIn) return;
     if (_index == _notificationsTab) return;
-    final count = await DtfApi.getNotificationsCount(settings);
-    if (mounted) settings.setNotificationCount(count);
+    final result = await context.read<NotificationsRepository>().unreadCount();
+    final count = result.valueOrNull;
+    if (mounted && count != null) settings.setNotificationCount(count);
   }
 
   void _onTapTab(int i) {
@@ -222,17 +326,26 @@ class _NavItem extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final color = selected ? accent : AppColors.textMuted;
-    Widget iconWidget = Icon(selected ? activeIcon : icon, color: color, size: 24);
+    Widget iconWidget = Icon(
+      selected ? activeIcon : icon,
+      color: color,
+      size: 24,
+    );
 
     if (showBadge) {
-      final count =
-          context.select<SettingsService, int>((s) => s.notificationCount);
+      final count = context.select<SettingsService, int>(
+        (s) => s.notificationCount,
+      );
       if (count > 0) {
         iconWidget = Stack(
           clipBehavior: Clip.none,
           children: [
             iconWidget,
-            Positioned(top: -5, right: -9, child: _NotificationBadge(count: count)),
+            Positioned(
+              top: -5,
+              right: -9,
+              child: _NotificationBadge(count: count),
+            ),
           ],
         );
       }

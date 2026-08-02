@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../api/dtf_api.dart';
-import '../services/settings_service.dart';
+import '../features/bookmarks/data/bookmarks_repository.dart';
+import '../features/bookmarks/presentation/bookmarks_controller.dart';
+import '../models/comment.dart';
+import '../models/post.dart';
 import '../theme.dart';
 import '../widgets/post_card.dart';
 import '../widgets/comment_widget.dart';
@@ -14,13 +16,11 @@ class BookmarksScreen extends StatefulWidget {
   State<BookmarksScreen> createState() => _BookmarksScreenState();
 }
 
-class _BookmarksScreenState extends State<BookmarksScreen> with SingleTickerProviderStateMixin {
+class _BookmarksScreenState extends State<BookmarksScreen>
+    with SingleTickerProviderStateMixin {
   late TabController _tabController;
 
-  final _tabs = [
-    ('posts', 'Посты'),
-    ('comments', 'Комментарии'),
-  ];
+  final _tabs = [('posts', 'Посты'), ('comments', 'Комментарии')];
 
   @override
   void initState() {
@@ -66,13 +66,17 @@ class _BookmarksList extends StatefulWidget {
   State<_BookmarksList> createState() => _BookmarksListState();
 }
 
-class _BookmarksListState extends State<_BookmarksList> with AutomaticKeepAliveClientMixin {
-  List<dynamic> _items = [];
-  bool _loading = true;
+class _BookmarksListState extends State<_BookmarksList>
+    with AutomaticKeepAliveClientMixin {
+  late final BookmarksController _controller;
+  List<Comment> get _commentItems => _controller.comments;
+  List<Post> get _posts => _controller.posts;
+  bool get _loading => _controller.isLoading;
 
   // The post id a bookmarked comment belongs to. Tries the structured `entry`
   // object first, then a `url` field (dtf.ru/subsite/12345-slug?comment=…).
-  int? _commentPostId(dynamic data) {
+  int? _commentPostId(Comment comment) {
+    final data = comment.rawJson;
     final entryId = data['entry']?['id'];
     if (entryId is int) return entryId;
     final url = data['url'] ?? data['entry']?['url'];
@@ -94,27 +98,43 @@ class _BookmarksListState extends State<_BookmarksList> with AutomaticKeepAliveC
   @override
   void initState() {
     super.initState();
-    _load();
+    _controller = BookmarksController(
+      context.read<BookmarksRepository>(),
+      widget.type,
+    )..addListener(_onChanged);
+    _controller.load();
   }
 
-  Future<void> _load() async {
-    final settings = context.read<SettingsService>();
-    final items = await DtfApi.getBookmarks(settings, type: widget.type);
-    if (!mounted) return;
-    setState(() { _items = items; _loading = false; });
+  void _onChanged() {
+    if (mounted) setState(() {});
   }
+
+  @override
+  void dispose() {
+    _controller
+      ..removeListener(_onChanged)
+      ..dispose();
+    super.dispose();
+  }
+
+  Future<void> _load() => _controller.load();
 
   @override
   Widget build(BuildContext context) {
     super.build(context);
     if (_loading) return const Center(child: CircularProgressIndicator());
-    if (_items.isEmpty) {
+    final itemCount = widget.type == 'posts'
+        ? _posts.length
+        : _commentItems.length;
+    if (itemCount == 0) {
       return RefreshIndicator(
         onRefresh: _load,
         child: ListView(
           children: const [
             SizedBox(height: 180),
-            Center(child: Text('Пусто', style: TextStyle(color: Colors.grey))),
+            Center(
+              child: Text('Пусто', style: TextStyle(color: Colors.grey)),
+            ),
           ],
         ),
       );
@@ -122,14 +142,14 @@ class _BookmarksListState extends State<_BookmarksList> with AutomaticKeepAliveC
     return RefreshIndicator(
       onRefresh: _load,
       child: ListView.builder(
-        itemCount: _items.length,
+        itemCount: itemCount,
         itemBuilder: (ctx, i) {
-          // Bookmark items wrap the actual content in `data` (with a type).
-          final raw = _items[i];
-          final data = raw['data'] ?? raw;
           if (widget.type == 'comments') {
-            final postId = _commentPostId(data);
-            final commentId = data['id'] as int?;
+            // Comment bookmarks wrap the actual comment in `data`.
+            final comment = _commentItems[i];
+            final data = comment.rawJson;
+            final postId = _commentPostId(comment);
+            final commentId = comment.id;
             return Padding(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
               // Tap on the comment body → open the post and scroll to this
@@ -138,29 +158,34 @@ class _BookmarksListState extends State<_BookmarksList> with AutomaticKeepAliveC
               child: GestureDetector(
                 onTap: postId != null
                     ? () => Navigator.push(
-                          ctx,
-                          MaterialPageRoute(
-                            builder: (_) => PostScreen(
-                              postId: postId,
-                              title: data['entry']?['title'] ?? '',
-                              scrollToCommentId: commentId,
-                            ),
+                        ctx,
+                        MaterialPageRoute(
+                          builder: (_) => PostScreen(
+                            postId: postId,
+                            title: data['entry']?['title'] ?? '',
+                            scrollToCommentId: commentId,
                           ),
-                        )
+                        ),
+                      )
                     : null,
-                child: CommentWidget(comment: data),
+                child: CommentWidget(
+                  key: ValueKey(comment.id),
+                  comment: comment,
+                ),
               ),
             );
           }
+          final post = _posts[i];
           return PostCard(
-            post: data,
+            key: ValueKey(post.id),
+            post: post,
             onTap: () => Navigator.push(
               ctx,
               MaterialPageRoute(
                 builder: (_) => PostScreen(
-                  postId: data['id'] as int,
-                  title: data['title'] ?? '',
-                  postData: data,
+                  postId: post.id,
+                  title: post.title,
+                  postData: post,
                 ),
               ),
             ),
