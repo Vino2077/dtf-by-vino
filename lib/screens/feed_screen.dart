@@ -22,7 +22,8 @@ class FeedScreen extends StatefulWidget {
   State<FeedScreen> createState() => FeedScreenState();
 }
 
-class FeedScreenState extends State<FeedScreen> with SingleTickerProviderStateMixin {
+class FeedScreenState extends State<FeedScreen>
+    with SingleTickerProviderStateMixin {
   late TabController _tabController;
 
   // (feedType, fullLabel, shortLabel) — order matches the Figma redesign.
@@ -35,8 +36,10 @@ class FeedScreenState extends State<FeedScreen> with SingleTickerProviderStateMi
 
   // One key per tab so the active feed list can be scrolled to top (e.g. when
   // the "Главная" nav tab is tapped while already on the feed).
-  late final List<GlobalKey<FeedListState>> _listKeys =
-      List.generate(_tabs.length, (_) => GlobalKey<FeedListState>());
+  late final List<GlobalKey<FeedListState>> _listKeys = List.generate(
+    _tabs.length,
+    (_) => GlobalKey<FeedListState>(),
+  );
 
   @override
   void initState() {
@@ -92,8 +95,10 @@ class FeedScreenState extends State<FeedScreen> with SingleTickerProviderStateMi
                 children: _tabs
                     .asMap()
                     .entries
-                    .map((e) => FeedList(
-                        key: _listKeys[e.key], feedType: e.value.$1))
+                    .map(
+                      (e) =>
+                          FeedList(key: _listKeys[e.key], feedType: e.value.$1),
+                    )
                     .toList(),
               ),
             ),
@@ -121,8 +126,7 @@ class _NewsDigestBlock extends StatelessWidget {
         children: [
           for (int i = 0; i < posts.length; i++) ...[
             if (i > 0)
-              const Divider(height: 1, thickness: 1,
-                  indent: 16, endIndent: 16),
+              const Divider(height: 1, thickness: 1, indent: 16, endIndent: 16),
             _NewsItem(post: posts[i], onTap: () => onTap(posts[i])),
           ],
         ],
@@ -176,7 +180,9 @@ class _NewsItem extends StatelessWidget {
                   Text(
                     post.subsite?.name ?? '',
                     style: TextStyle(
-                        color: AppColors.textSecondary, fontSize: 12),
+                      color: AppColors.textSecondary,
+                      fontSize: 12,
+                    ),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
@@ -193,10 +199,16 @@ class _NewsItem extends StatelessWidget {
                   height: 72,
                   fit: BoxFit.cover,
                   memCacheWidth: 200,
-                  placeholder: (_, _) =>
-                      Container(width: 72, height: 72, color: AppColors.bgElevated),
-                  errorWidget: (_, _, _) =>
-                      Container(width: 72, height: 72, color: AppColors.bgElevated),
+                  placeholder: (_, _) => Container(
+                    width: 72,
+                    height: 72,
+                    color: AppColors.bgElevated,
+                  ),
+                  errorWidget: (_, _, _) => Container(
+                    width: 72,
+                    height: 72,
+                    color: AppColors.bgElevated,
+                  ),
                 ),
               ),
             ],
@@ -265,9 +277,9 @@ class FeedListState extends State<FeedList> with AutomaticKeepAliveClientMixin {
       _lastRefreshFailureVersion = state.refreshFailureVersion;
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted || state.refreshFailure == null) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(state.refreshFailure!.message)),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(state.refreshFailure!.message)));
       });
     }
   }
@@ -288,8 +300,11 @@ class FeedListState extends State<FeedList> with AutomaticKeepAliveClientMixin {
   /// tab). Safe to call before the list has been laid out.
   void scrollToTop() {
     if (!_scrollController.hasClients) return;
-    _scrollController.animateTo(0,
-        duration: const Duration(milliseconds: 400), curve: Curves.easeOut);
+    _scrollController.animateTo(
+      0,
+      duration: const Duration(milliseconds: 400),
+      curve: Curves.easeOut,
+    );
   }
 
   @override
@@ -327,8 +342,10 @@ class FeedListState extends State<FeedList> with AutomaticKeepAliveClientMixin {
               children: [
                 const SizedBox(height: 200),
                 Center(
-                  child: Text('Нет постов',
-                      style: TextStyle(color: AppColors.textSecondary)),
+                  child: Text(
+                    'Нет постов',
+                    style: TextStyle(color: AppColors.textSecondary),
+                  ),
                 ),
               ],
             )
@@ -406,11 +423,13 @@ class _FeedInitialError extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.cloud_off, color: AppColors.textMuted, size: 48),
+            Icon(Icons.cloud_off, color: AppColors.textMuted, size: 48),
             const SizedBox(height: 12),
-            Text(failure.message,
-                textAlign: TextAlign.center,
-                style: const TextStyle(color: AppColors.textSecondary)),
+            Text(
+              failure.message,
+              textAlign: TextAlign.center,
+              style: TextStyle(color: AppColors.textSecondary),
+            ),
             const SizedBox(height: 16),
             ElevatedButton(onPressed: onRetry, child: const Text('Повторить')),
           ],
@@ -428,13 +447,13 @@ class _PaginationError extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Padding(
-        padding: const EdgeInsets.all(16),
-        child: Center(
-          child: TextButton.icon(
-            onPressed: onRetry,
-            icon: const Icon(Icons.refresh),
-            label: Text('$message · Повторить'),
-          ),
-        ),
-      );
+    padding: const EdgeInsets.all(16),
+    child: Center(
+      child: TextButton.icon(
+        onPressed: onRetry,
+        icon: const Icon(Icons.refresh),
+        label: Text('$message · Повторить'),
+      ),
+    ),
+  );
 }

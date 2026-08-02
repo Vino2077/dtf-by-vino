@@ -233,10 +233,7 @@ class _EditorScreenState extends State<EditorScreen> {
           children: [
             const SizedBox(height: 8),
             ListTile(
-              leading: Icon(
-                Icons.photo_library,
-                color: AppColors.textPrimary,
-              ),
+              leading: Icon(Icons.photo_library, color: AppColors.textPrimary),
               title: Text(
                 'Фото',
                 style: TextStyle(color: AppColors.textPrimary),
@@ -735,7 +732,7 @@ class _EditorScreenState extends State<EditorScreen> {
           textCapitalization: TextCapitalization.sentences,
           decoration: InputDecoration(
             hintText: isH2 ? 'Заголовок H2' : 'Заголовок H3',
-            hintStyle: const TextStyle(
+            hintStyle: TextStyle(
               color: AppColors.textMuted,
               fontWeight: FontWeight.bold,
             ),
@@ -833,7 +830,7 @@ class _EditorScreenState extends State<EditorScreen> {
                   textCapitalization: TextCapitalization.sentences,
                   decoration: InputDecoration(
                     hintText: 'Пункт ${i + 1}...',
-                    hintStyle: const TextStyle(color: AppColors.textMuted),
+                    hintStyle: TextStyle(color: AppColors.textMuted),
                     border: InputBorder.none,
                     isDense: true,
                     contentPadding: const EdgeInsets.symmetric(vertical: 4),
@@ -844,8 +841,8 @@ class _EditorScreenState extends State<EditorScreen> {
               if (block.listCtrls.length > 1)
                 GestureDetector(
                   onTap: () => _removeListItem(block, i),
-                  child: const Padding(
-                    padding: EdgeInsets.only(left: 6),
+                  child: Padding(
+                    padding: const EdgeInsets.only(left: 6),
                     child: Icon(
                       Icons.remove_circle_outline,
                       size: 16,
@@ -927,7 +924,7 @@ class _EditorScreenState extends State<EditorScreen> {
                             color: AppColors.textPrimary,
                             fontSize: 15,
                           ),
-                          decoration: const InputDecoration(
+                          decoration: InputDecoration(
                             hintText: 'Название аудио...',
                             hintStyle: TextStyle(color: AppColors.textMuted),
                             border: InputBorder.none,
@@ -1143,8 +1140,8 @@ class _EditorScreenState extends State<EditorScreen> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Padding(
-              padding: EdgeInsets.symmetric(vertical: 14),
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 14),
               child: Text(
                 'Опубликовать в',
                 style: TextStyle(
@@ -1209,10 +1206,7 @@ class _EditorScreenState extends State<EditorScreen> {
                 ),
               ),
               ListTile(
-                leading: Icon(
-                  Icons.reorder,
-                  color: AppColors.textPrimary,
-                ),
+                leading: Icon(Icons.reorder, color: AppColors.textPrimary),
                 title: Text(
                   _reorderMode
                       ? 'Выйти из режима перестановки'

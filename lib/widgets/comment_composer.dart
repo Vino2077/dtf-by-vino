@@ -68,7 +68,7 @@ class CommentComposer extends StatelessWidget {
                     ),
                     GestureDetector(
                       onTap: onCancelReply,
-                      child: const Icon(
+                      child: Icon(
                         Icons.close,
                         size: 16,
                         color: AppColors.textMuted,
@@ -187,7 +187,7 @@ class CommentComposer extends StatelessWidget {
                       minWidth: 36,
                       minHeight: 36,
                     ),
-                    icon: const Icon(
+                    icon: Icon(
                       Icons.image_outlined,
                       color: AppColors.textMuted,
                     ),
@@ -198,7 +198,7 @@ class CommentComposer extends StatelessWidget {
                     child: TextField(
                       controller: controller,
                       focusNode: focusNode,
-                      style: const TextStyle(
+                      style: TextStyle(
                         color: AppColors.textPrimary,
                         fontSize: 14,
                       ),
@@ -207,7 +207,7 @@ class CommentComposer extends StatelessWidget {
                       textCapitalization: TextCapitalization.sentences,
                       decoration: InputDecoration(
                         hintText: 'Комментарий...',
-                        hintStyle: const TextStyle(color: AppColors.textMuted),
+                        hintStyle: TextStyle(color: AppColors.textMuted),
                         filled: true,
                         fillColor: AppColors.bgElevated,
                         isDense: true,

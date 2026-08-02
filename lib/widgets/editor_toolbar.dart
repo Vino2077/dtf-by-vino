@@ -29,7 +29,7 @@ class EditorToolbar extends StatelessWidget {
     height: 48,
     decoration: BoxDecoration(
       color: AppColors.bgCard,
-      border: const Border(top: BorderSide(color: AppColors.bgElevated)),
+      border: Border(top: BorderSide(color: AppColors.bgElevated)),
     ),
     child: Row(
       children: [
