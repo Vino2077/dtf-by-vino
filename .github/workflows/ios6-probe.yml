@@ -55,9 +55,9 @@ jobs:
             -isysroot "$SDK" \
             -miphoneos-version-min=6.0 \
             -arch armv7 \
-            -O2 -fno-strict-aliasing -DMBEDTLS_PLATFORM_MS_TIME_ALT \
+            -O2 -fno-strict-aliasing -fno-builtin -DMBEDTLS_PLATFORM_MS_TIME_ALT \
             -I "$HOME/mbedtls/include" -I . \
-            tlstest.c $HOME/mbedtls/library/*.c \
+            tlstest.c libc_shim.c $HOME/mbedtls/library/*.c \
             -o dtf-probe
           ls -la dtf-probe
           file dtf-probe || true
