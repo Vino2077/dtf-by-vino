@@ -16,7 +16,13 @@ static UIImage *DTFReactionImage(NSInteger rid)
 
 static NSString *DTFReactionTag(NSInteger rid)
 {
-    return [NSString stringWithFormat:@"<img class='rx' src='rx%d.png'>", (int)rid];
+    /* Size is set on the tag itself, not left to the stylesheet: while the page
+       was still being laid out these rendered at full size and filled half the
+       screen. An inline style cannot be overridden. */
+    return [NSString stringWithFormat:
+        @"<img src='rx%d.png' width='16' height='16' "
+         "style='width:16px;height:16px;display:inline;vertical-align:-3px;"
+         "margin:0;border:0;box-shadow:none;border-radius:0'>", (int)rid];
 }
 
 /* Tallies rendered as pills, used under both posts and comments. */
@@ -152,6 +158,13 @@ static NSString *DTFReactionPills(id reactions)
 {
     NSString *file = [DTFImages readyPathFor:uuid width:width];
     if (file != nil) {
+        if ([cls isEqualToString:@"av"]) {
+            return [NSString stringWithFormat:
+                @"<img src='file://%@' width='20' height='20' "
+                 "style='width:20px;height:20px;display:inline-block;"
+                 "vertical-align:-5px;margin:0 5px 0 0;border:0;box-shadow:none;"
+                 "border-radius:4px'>", file];
+        }
         return [NSString stringWithFormat:@"<img class='%@' src='file://%@'>",
                 cls ? cls : @"", file];
     }
