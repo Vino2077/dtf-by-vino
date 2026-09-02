@@ -3,71 +3,55 @@
 #import "dtf_ui.h"
 #import "dtf_net.h"
 
-/* The reaction ids DTF offers first, with the CDN uuid of each picture.
-   Carried over from the Android client registry. */
-static NSArray *DTFReactionIds(void)
+/* Reaction icons ship inside the app bundle as rx<id>.png — fetching fifty of
+   them over fresh TLS connections on this hardware was far too slow for them
+   ever to show up. They are read from disk once and kept as base64 so the
+   article view can inline them. */
+static NSString *DTFReactionBase64(NSInteger rid)
 {
-    return [NSArray arrayWithObjects:@"1", @"2", @"3", @"4", @"5", @"6", @"7", @"8", nil];
+    static NSMutableDictionary *cache = nil;
+    if (cache == nil) cache = [[NSMutableDictionary alloc] init];
+
+    NSString *key = [NSString stringWithFormat:@"%d", (int)rid];
+    NSString *hit = [cache objectForKey:key];
+    if (hit != nil) return [hit length] > 0 ? hit : nil;
+
+    NSString *file = [[NSBundle mainBundle]
+        pathForResource:[NSString stringWithFormat:@"rx%d", (int)rid] ofType:@"png"];
+    NSData *d = file != nil ? [NSData dataWithContentsOfFile:file] : nil;
+    NSString *b64 = [d length] > 0 ? DTFBase64(d) : @"";
+    [cache setObject:b64 forKey:key];
+    return [b64 length] > 0 ? b64 : nil;
 }
 
-static NSString *DTFReactionUuid(NSInteger rid)
+static UIImage *DTFReactionImage(NSInteger rid)
 {
-    static NSDictionary *map = nil;
-    if (map == nil) {
-        map = [[NSDictionary alloc] initWithObjectsAndKeys:
-            @"5c63be49-162a-5e4e-adca-9b9c3f76314c", @"1",
-            @"b9e9a5d6-cfbc-5d11-9b31-edad6bb6fbf0", @"2",
-            @"3f5c49f9-22bc-521d-915a-a292f6210c67", @"3",
-            @"15ad35e5-1708-58a5-a25a-d419cdd2d46a", @"4",
-            @"0f3a998f-1441-5f0f-8a5b-549bbf170c65", @"5",
-            @"2d62d1ab-8ec6-5f17-81f8-6f6f3312d283", @"6",
-            @"ec72865d-ec4e-5299-b763-628cfd2539af", @"7",
-            @"f8f6d0eb-8e72-50b1-af8e-c5a863a0c3b0", @"8",
-            @"080e8489-f354-52f3-b495-d3901aa329b3", @"9",
-            @"362a7194-57ee-5417-835e-bdc54d5394d4", @"10",
-            @"b09f4923-5520-5ef9-b86d-668027a98d08", @"11",
-            @"5862140b-90b1-5c28-b0f0-8bab45beb587", @"12",
-            @"9368c0d2-e9e3-55c8-b633-c44c82095226", @"13",
-            @"6aa490dc-b161-57ac-ad47-1f6a4946b513", @"14",
-            @"898d07e7-06ea-5ff7-9ad6-8f74eb4e6f04", @"15",
-            @"825e5ec2-bd20-5d7b-a681-f0fd66de0c21", @"16",
-            @"f8001ccc-dbc1-5c00-8991-d864aad61ef3", @"17",
-            @"55b61666-fa06-55cb-90d2-2a53ee2bf386", @"18",
-            @"ba93fedc-c5b7-5cf6-82c4-7cdb0fa6a6a2", @"19",
-            @"ded55fdc-8ecf-5de9-9912-13e748bdc30f", @"20",
-            @"d9935395-45e1-5930-93cf-44581c2ce294", @"21",
-            @"7f766c9a-3720-5eaf-9a1a-3d0038876af7", @"22",
-            @"88faa3a8-281d-5f0d-8e9f-bd23d541d33b", @"23",
-            @"36cfdc28-ced9-5e6f-8195-e75975bc9f31", @"24",
-            @"cdbfe605-aad2-57e6-abe3-df621c6b1efc", @"25",
-            @"4f273793-7fbe-5b4f-9818-1d62885511b3", @"26",
-            @"79146d35-4e27-50ac-be61-134925bb8c28", @"28",
-            @"8c0b9c07-6fe0-55f1-b485-c62d41484e57", @"29",
-            @"49d316f2-0509-563f-9061-35fd33b3aa5e", @"31",
-            @"0d857be0-89c8-5be7-a249-362169b87b17", @"33",
-            @"16998ee5-fad8-5f8b-ba97-e055c92c4192", @"34",
-            @"67c34adc-843c-586c-9058-bc39acc39e82", @"35",
-            @"6169ffa8-feb6-53ba-ba1c-f5aef99c94d0", @"36",
-            @"2e83eb55-73ea-5578-b192-f3f9875cc819", @"37",
-            @"b86bdd6e-9266-5a7b-8d33-e3daa7b384ed", @"38",
-            @"e03bb7ba-5bc9-58bb-8187-161d8a5faa1f", @"39",
-            @"ba0e3326-e5ea-5d2b-9578-0ceee0c89e8d", @"40",
-            @"d9129c05-752c-5ffc-a84f-7b4ea060333a", @"41",
-            @"4beec4a0-bf55-533f-8038-7025f3ef8f92", @"42",
-            @"8aadf75b-8379-5594-88b0-c75335964842", @"43",
-            @"290b809e-97d2-53fc-beb8-4cce58a57f63", @"44",
-            @"60674a94-589e-5e23-b6d8-7146979059e2", @"45",
-            @"54dbc6e7-ff34-5b33-916d-a85eba29490d", @"46",
-            @"e9ca0e22-64e8-5ea2-aa08-76c1d449f762", @"47",
-            @"289ac805-d268-5f73-b1bd-22df665ab32f", @"48",
-            @"5692c883-47dc-5fed-9f35-8e9117e13608", @"49",
-            @"59d77ded-3da2-5a9f-bde7-32ecc1bb627f", @"50",
-            @"05adc583-5a04-5121-98a2-41ecfab09a6b", @"51",
-            @"05643808-db3c-5de1-999a-f24c4c65c811", @"52",
-            @"83e328b4-2192-5e20-8c2e-e1d8f301020e", @"53",
-            nil];
+    return [UIImage imageNamed:[NSString stringWithFormat:@"rx%d.png", (int)rid]];
+}
+
+/* One <img> for a reaction, straight from the bundle. */
+static NSString *DTFReactionTag(NSInteger rid)
+{
+    NSString *b64 = DTFReactionBase64(rid);
+    if (b64 == nil) return [NSString stringWithFormat:@"#%d", (int)rid];
+    return [NSString stringWithFormat:@"<img class='rx' src='data:image/png;base64,%@'>", b64];
+}
+
+/* Tallies rendered as pills, used under both posts and comments. */
+static NSString *DTFReactionPills(id reactions)
+{
+    NSArray *counters = DTFArr([DTFDict(reactions) objectForKey:@"counters"]);
+    if ([counters count] == 0) return @"";
+    NSMutableString *h = [NSMutableString stringWithString:@"<div class='rxrow'>"];
+    for (id c in counters) {
+        NSDictionary *cd = DTFDict(c);
+        NSInteger n = DTFInt([cd objectForKey:@"count"]);
+        if (n <= 0) continue;
+        [h appendFormat:@"<span class='pill'>%@ %d</span>",
+            DTFReactionTag(DTFInt([cd objectForKey:@"id"])), (int)n];
     }
-    return [map objectForKey:[NSString stringWithFormat:@"%d", (int)rid]];
+    [h appendString:@"</div>"];
+    return h;
 }
 
 @interface PostViewController ()
@@ -192,29 +176,14 @@ static NSString *DTFReactionUuid(NSInteger rid)
     if ([pending objectForKey:uuid] == nil) {
         [pending setObject:[NSNumber numberWithInt:width] forKey:uuid];
     }
-    return [cls isEqualToString:@"rx"] ? @"" : @"<div class='note'>картинка загружается…</div>";
+    if ([cls isEqualToString:@"av"]) return @"<span class='av'></span>";
+    return @"<div class='note'>картинка загружается…</div>";
 }
 
 - (NSString *)reactionsHtmlPending:(NSMutableDictionary *)pending
 {
-    NSDictionary *reactions = DTFDict([self.postData objectForKey:@"reactions"]);
-    NSArray *counters = DTFArr([reactions objectForKey:@"counters"]);
-    if ([counters count] == 0) return @"";
-
-    NSMutableString *h = [NSMutableString stringWithString:@"<div style='margin-top:14px'>"];
-    for (id c in counters) {
-        NSDictionary *cd = DTFDict(c);
-        NSInteger n = DTFInt([cd objectForKey:@"count"]);
-        if (n <= 0) continue;
-        NSInteger rid = DTFInt([cd objectForKey:@"id"]);
-        NSString *uuid = DTFReactionUuid(rid);
-        NSString *pic = [uuid length] > 0
-            ? [self imgTagFor:uuid pending:pending width:48 class:@"rx"]
-            : [NSString stringWithFormat:@"#%d", (int)rid];
-        [h appendFormat:@"<span class='pill'>%@ %d</span>", pic, (int)n];
-    }
-    [h appendString:@"</div>"];
-    return h;
+    /* Icons come from the bundle now, so nothing here needs downloading. */
+    return DTFReactionPills([self.postData objectForKey:@"reactions"]);
 }
 
 - (NSString *)bodyHtmlPending:(NSMutableDictionary *)pending
@@ -361,19 +330,24 @@ static NSString *DTFReactionUuid(NSInteger rid)
         NSInteger likes = DTFInt([DTFDict([cd objectForKey:@"likes"]) objectForKey:@"summ"]);
         NSString *ago = DTFAgo((NSTimeInterval)DTFInt([cd objectForKey:@"date"]));
 
+        /* An empty tile holds the avatar's place until the picture lands, so
+           the row does not jump around as they arrive. */
         NSString *pic = [avatar length] > 0
-            ? [self imgTagFor:avatar pending:pending width:48 class:@"rx"] : @"";
+            ? [self imgTagFor:avatar pending:pending width:48 class:@"av"]
+            : @"<span class='av'></span>";
 
         [h appendFormat:@"<div class='card' style='margin-left:%dpx'>"
                          "<div class='who'>%@ %@ <span class='meta'>%@%@</span></div>"
-                         "<div class='body'>%@</div>"
+                         "<div class='body'>%@</div>%@"
                          "<div class='meta'><a href='dtfreply:%d'>Ответить</a>"
                          " &nbsp; <a href='dtfreact:%d'>♥ Реакция</a></div></div>",
             (int)(level * 11), pic,
             who ? who : @"?",
             ago,
             likes != 0 ? [NSString stringWithFormat:@" · %+d", (int)likes] : @"",
-            text, (int)cid, (int)cid];
+            text,
+            DTFReactionPills([cd objectForKey:@"reactions"]),
+            (int)cid, (int)cid];
     }
     return h;
 }
@@ -510,7 +484,8 @@ static NSString *DTFReactionUuid(NSInteger rid)
     bar.backgroundColor = [UIColor colorWithWhite:0.16f alpha:0.94f];
     bar.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleTopMargin;
 
-    NSArray *ids = DTFReactionIds();
+    NSArray *ids = [NSArray arrayWithObjects:@"1", @"2", @"3", @"4", @"5", @"6",
+                    @"7", @"8", nil];
     CGFloat step = w / (CGFloat)[ids count];
     for (NSUInteger i = 0; i < [ids count]; i++) {
         NSInteger rid = [[ids objectAtIndex:i] integerValue];
@@ -526,7 +501,7 @@ static NSString *DTFReactionUuid(NSInteger rid)
         iv.userInteractionEnabled = NO;
         iv.image = DTFPlaceholder(34.0f);
         [b addSubview:iv];
-        [DTFImages loadUuid:DTFReactionUuid(rid) width:64 into:iv];
+        iv.image = DTFReactionImage(rid);
 
         [bar addSubview:b];
     }

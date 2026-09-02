@@ -42,6 +42,10 @@ void DTFSetToken(NSString *token)
     [d synchronize];
 }
 
+static int gLastStatus = 0;
+
+int DTFLastStatus(void) { return gLastStatus; }
+
 static NSString *DTFErrText(const char *stage, int ret)
 {
     char buf[192];
@@ -161,6 +165,13 @@ static NSData *DTFRequest(NSString *host, NSString *path, NSString *method,
 
         const char *bytes = (const char *)[raw bytes];
         NSUInteger len = [raw length];
+
+        /* "HTTP/1.1 400 Bad Request" -> 400, so failures can name themselves. */
+        gLastStatus = 0;
+        if (len > 12 && strncmp(bytes, "HTTP/", 5) == 0) {
+            gLastStatus = atoi(bytes + 9);
+        }
+
         NSUInteger start = 0;
         for (NSUInteger i = 0; i + 3 < len; i++) {
             if (bytes[i] == '\r' && bytes[i+1] == '\n' &&

@@ -84,6 +84,21 @@ jobs:
           "
           ls -la Icon.png
 
+      # Reaction icons ship inside the bundle: fetching 50 of them over fresh
+      # TLS connections on the device was far too slow to ever appear.
+      - name: Fetch reaction icons
+        working-directory: ios6
+        run: |
+          mkdir -p rx
+          while read -r id uuid; do
+            [ -z "$id" ] && continue
+            curl -sSL --max-time 30 \
+              "https://leonardo.osnova.io/$uuid/-/preview/64/-/format/png/" \
+              -o "rx/rx$id.png"
+          done < reactions.txt
+          ls rx | wc -l
+          du -sh rx
+
       - name: Package the .ipa
         working-directory: ios6
         run: |
@@ -92,6 +107,7 @@ jobs:
           cp DTF Payload/DTF.app/DTF
           cp Info.plist Payload/DTF.app/Info.plist
           cp Icon.png Payload/DTF.app/Icon.png
+          cp rx/*.png Payload/DTF.app/
           chmod +x Payload/DTF.app/DTF
 
           curl -sSL -o /tmp/ldid \

@@ -31,3 +31,7 @@ void DTFSetToken(NSString *token);
 /// endpoint wants (`entry` = the whole post as application/json).
 NSData *DTFPostJsonPart(NSString *host, NSString *path, NSString *partName,
                         NSData *json, NSString **error);
+
+/// HTTP status of the most recent request on this thread — used to explain
+/// failures ("HTTP 400" tells far more than a blank screen).
+int DTFLastStatus(void);

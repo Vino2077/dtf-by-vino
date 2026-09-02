@@ -280,17 +280,27 @@ static id DTFApiGet(NSString *version, NSString *rest, NSString **error)
     }
 
     if (error) {
+        int status = DTFLastStatus();
         id msg = [rootDict objectForKey:@"message"];
         if ([msg isKindOfClass:[NSString class]] && [msg length] > 0) {
             /* Surface the server's own words — "Too many calls" is common here
                and means waiting, not wrong credentials. */
-            *error = [msg isEqualToString:@"Too many calls"]
-                ? @"Сервер просит подождать (слишком часто). Попробуй через минуту или войди по токену."
-                : msg;
+            if ([msg isEqualToString:@"Too many calls"]) {
+                *error = @"Сервер просит подождать: слишком часто. "
+                          "Попробуй через минуту или войди по токену.";
+            } else if ([msg rangeOfString:@"Invalid login"].location != NSNotFound) {
+                *error = @"Почта или пароль не подошли";
+            } else {
+                *error = [NSString stringWithFormat:@"%@ (HTTP %d)", msg, status];
+            }
         } else if (result != nil) {
-            *error = @"Сервер не вернул токен — войди по токену ниже.";
+            *error = @"Сервер принял вход, но не отдал токен — войди по токену ниже.";
+        } else if (rootDict == nil) {
+            *error = [NSString stringWithFormat:
+                @"Ответ не разобрался (HTTP %d). Попробуй вход по токену.", status];
         } else {
-            *error = @"Почта или пароль не подошли";
+            *error = [NSString stringWithFormat:
+                @"Не удалось войти (HTTP %d)", status];
         }
     }
     return nil;
