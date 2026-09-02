@@ -1,11 +1,11 @@
 /*
- * The public iPhoneOS SDK stubs used here don't export the basic mem*/str*
- * routines for armv7, so the linker cannot resolve them (everything else —
- * sockets, stdio, malloc — resolves fine). They are small and standard, so
- * supply them directly.
+ * The public iPhoneOS SDK stubs used here do not export the basic memory
+ * and string routines for armv7, so the linker cannot resolve them.
+ * Everything else (sockets, stdio, malloc) resolves fine. These eight are
+ * small and standard, so supply them directly.
  *
- * Built with -fno-builtin so clang cannot lower these very definitions back
- * into calls to themselves.
+ * Built with -fno-builtin so clang cannot lower these very definitions
+ * back into calls to themselves.
  */
 #include <stddef.h>
 
