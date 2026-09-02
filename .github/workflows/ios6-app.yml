@@ -60,29 +60,19 @@ jobs:
             -o DTF
           ls -la DTF
 
-      - name: Make the icon
+      # The app icon is the Android launcher icon, scaled to what iOS 6 wants.
+      - name: Make the icons
         working-directory: ios6
         run: |
+          pip3 install --quiet pillow
           python3 -c "
-          import zlib, struct
-          W = H = 114
-          rows = []
-          for y in range(H):
-              row = bytearray([0])
-              for x in range(W):
-                  row += bytes((91, 130, 242))
-              rows.append(bytes(row))
-          raw = b''.join(rows)
-          def chunk(tag, data):
-              c = tag + data
-              return struct.pack('>I', len(data)) + c + struct.pack('>I', zlib.crc32(c) & 0xffffffff)
-          png = (b'\x89PNG\r\n\x1a\n'
-                 + chunk(b'IHDR', struct.pack('>IIBBBBB', W, H, 8, 2, 0, 0, 0))
-                 + chunk(b'IDAT', zlib.compress(raw, 9))
-                 + chunk(b'IEND', b''))
-          open('Icon.png','wb').write(png)
+          from PIL import Image
+          src = Image.open('appicon.png').convert('RGBA')
+          for name, size in [('Icon.png', 57), ('Icon@2x.png', 114),
+                             ('Icon-72.png', 72), ('Icon-72@2x.png', 144)]:
+              src.resize((size, size), Image.LANCZOS).save(name)
           "
-          ls -la Icon.png
+          ls -la Icon*.png
 
       # Reaction icons ship inside the bundle: fetching 50 of them over fresh
       # TLS connections on the device was far too slow to ever appear.
@@ -106,7 +96,7 @@ jobs:
           mkdir -p Payload/DTF.app
           cp DTF Payload/DTF.app/DTF
           cp Info.plist Payload/DTF.app/Info.plist
-          cp Icon.png Payload/DTF.app/Icon.png
+          cp Icon.png Icon@2x.png Icon-72.png Icon-72@2x.png Payload/DTF.app/
           cp rx/*.png Payload/DTF.app/
           chmod +x Payload/DTF.app/DTF
 
