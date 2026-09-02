@@ -1,0 +1,82 @@
+# Cross-compiles the iOS 6 connectivity probe (armv7) on a Linux runner.
+# No Mac needed: a Linux-hosted clang/ld64 toolchain plus an iPhoneOS SDK,
+# targeting -miphoneos-version-min=6.0. Output is a fake-signed binary for
+# a jailbroken device.
+name: iOS 6 probe
+
+on:
+  push:
+    branches: [ios6-poc]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fetch iOS toolchain (Linux-hosted clang + ld64)
+        run: |
+          mkdir -p $HOME/toolchain
+          curl -sSL -o /tmp/tc.tar.xz \
+            https://github.com/kabiroberai/swift-toolchain-linux/releases/download/v2.3.0/swift-5.8-ubuntu22.04.tar.xz
+          tar -xf /tmp/tc.tar.xz -C $HOME/toolchain --strip-components=1
+          find $HOME/toolchain -maxdepth 3 -name 'clang' -o -maxdepth 3 -name 'ld64*' | head
+
+      - name: Fetch iPhoneOS SDK
+        run: |
+          git clone --depth 1 https://github.com/theos/sdks.git $HOME/sdks
+          ls $HOME/sdks
+
+      - name: Fetch mbedTLS
+        run: |
+          git clone --depth 1 --branch v3.6.2 https://github.com/Mbed-TLS/mbedtls.git $HOME/mbedtls
+          echo "mbedTLS: $(git -C $HOME/mbedtls describe --tags)"
+
+      - name: Embed CA roots into a header
+        working-directory: ios6
+        run: |
+          {
+            echo '/* generated from ca_bundle.pem */'
+            echo 'static const char CA_BUNDLE_PEM[] ='
+            sed -e 's/\/\\/g' -e 's/"/\\"/g' -e 's/^/"/' -e 's/$/\n"/' ca_bundle.pem
+            echo ';'
+          } > ca_bundle.h
+          head -3 ca_bundle.h; echo '...'; wc -l ca_bundle.h
+
+      - name: Build for armv7 / iOS 6
+        working-directory: ios6
+        run: |
+          set -x
+          CLANG=$(find $HOME/toolchain -name clang -type f | head -1)
+          SDK=$(ls -d $HOME/sdks/iPhoneOS*.sdk | sort -V | head -1)
+          echo "clang: $CLANG"
+          echo "sdk:   $SDK"
+          "$CLANG" --version
+
+          # mbedTLS is compiled straight into the binary — no ar/ranlib needed.
+          "$CLANG" \
+            -target armv7-apple-ios6.0 \
+            -isysroot "$SDK" \
+            -miphoneos-version-min=6.0 \
+            -arch armv7 \
+            -O2 -fno-strict-aliasing \
+            -I "$HOME/mbedtls/include" -I . \
+            tlstest.c $HOME/mbedtls/library/*.c \
+            -o dtf-probe
+          ls -la dtf-probe
+          file dtf-probe || true
+
+      - name: Fake-sign for jailbroken devices
+        working-directory: ios6
+        run: |
+          curl -sSL -o /tmp/ldid \
+            https://github.com/ProcursusTeam/ldid/releases/latest/download/ldid_linux_x86_64
+          chmod +x /tmp/ldid
+          /tmp/ldid -S dtf-probe
+          ls -la dtf-probe
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dtf-probe-ios6-armv7
+          path: ios6/dtf-probe
