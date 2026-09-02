@@ -1,0 +1,109 @@
+# Builds the iOS 6 DTF client (armv7) into an installable .ipa on a Linux
+# runner. See ios6/README.md for why a bundled TLS stack is required and
+# which SDK quirks are worked around here.
+name: iOS 6 app
+
+on:
+  push:
+    branches: [ios6-poc]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fetch iOS toolchain (Linux-hosted clang + ld64)
+        run: |
+          mkdir -p $HOME/toolchain
+          curl -sSL -o /tmp/tc.tar.xz \
+            https://github.com/kabiroberai/swift-toolchain-linux/releases/download/v2.3.0/swift-5.8-ubuntu22.04.tar.xz
+          tar -xf /tmp/tc.tar.xz -C $HOME/toolchain --strip-components=1
+
+      - name: Fetch iPhoneOS SDK
+        run: git clone --depth 1 https://github.com/theos/sdks.git $HOME/sdks
+
+      - name: Fetch mbedTLS
+        run: git clone --depth 1 --branch v3.6.2 https://github.com/Mbed-TLS/mbedtls.git $HOME/mbedtls
+
+      - name: Embed CA roots into a header
+        working-directory: ios6
+        run: |
+          python3 -c "d=open('ca_bundle.pem','rb').read(); open('ca_bundle.h','w').write('static const char CA_BUNDLE_PEM[] = {'+','.join(str(b) for b in d)+',0};')"
+
+      - name: Build app binary
+        working-directory: ios6
+        run: |
+          set -x
+          CLANG=$(find $HOME/toolchain -name 'clang' | head -1)
+          SDK=$(ls -d $HOME/sdks/iPhoneOS*.sdk | sort -V | head -1)
+
+          # libSystem re-exports a liblaunch this SDK omits; a real (empty) stub
+          # dylib with the expected install name satisfies the linker.
+          if [ ! -f "$SDK/usr/lib/system/liblaunch.dylib" ]; then
+            echo "static int stub_unused;" > /tmp/stub.c
+            "$CLANG" -target armv7-apple-ios6.0 -isysroot "$SDK" -arch armv7 -miphoneos-version-min=6.0 -nostdlib -dynamiclib -Wl,-install_name,/usr/lib/system/liblaunch.dylib /tmp/stub.c -o "$SDK/usr/lib/system/liblaunch.dylib"
+          fi
+
+          "$CLANG" \
+            -target armv7-apple-ios6.0 \
+            -isysroot "$SDK" \
+            -miphoneos-version-min=6.0 \
+            -arch armv7 \
+            -O2 -fno-strict-aliasing -fno-builtin \
+            -fobjc-exceptions \
+            -DMBEDTLS_PLATFORM_MS_TIME_ALT \
+            -I "$HOME/mbedtls/include" -I . \
+            -framework UIKit -framework Foundation -framework CoreGraphics \
+            main.m dtf_net.m libc_shim.c $HOME/mbedtls/library/*.c \
+            -o DTF
+          ls -la DTF
+
+      - name: Make the icon
+        working-directory: ios6
+        run: |
+          python3 -c "
+          import zlib, struct
+          W = H = 114
+          rows = []
+          for y in range(H):
+              row = bytearray([0])
+              for x in range(W):
+                  row += bytes((91, 130, 242))
+              rows.append(bytes(row))
+          raw = b''.join(rows)
+          def chunk(tag, data):
+              c = tag + data
+              return struct.pack('>I', len(data)) + c + struct.pack('>I', zlib.crc32(c) & 0xffffffff)
+          png = (b'\x89PNG\r\n\x1a\n'
+                 + chunk(b'IHDR', struct.pack('>IIBBBBB', W, H, 8, 2, 0, 0, 0))
+                 + chunk(b'IDAT', zlib.compress(raw, 9))
+                 + chunk(b'IEND', b''))
+          open('Icon.png','wb').write(png)
+          "
+          ls -la Icon.png
+
+      - name: Package the .ipa
+        working-directory: ios6
+        run: |
+          rm -rf Payload
+          mkdir -p Payload/DTF.app
+          cp DTF Payload/DTF.app/DTF
+          cp Info.plist Payload/DTF.app/Info.plist
+          cp Icon.png Payload/DTF.app/Icon.png
+          chmod +x Payload/DTF.app/DTF
+
+          curl -sSL -o /tmp/ldid \
+            https://github.com/ProcursusTeam/ldid/releases/latest/download/ldid_linux_x86_64
+          chmod +x /tmp/ldid
+          /tmp/ldid -S Payload/DTF.app/DTF
+
+          zip -qr DTF-ios6.ipa Payload
+          ls -la DTF-ios6.ipa
+          unzip -l DTF-ios6.ipa
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: DTF-ios6-ipa
+          path: ios6/DTF-ios6.ipa
