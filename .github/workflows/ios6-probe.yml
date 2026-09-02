@@ -1,6 +1,6 @@
 # Cross-compiles the iOS 6 connectivity probe (armv7) on a Linux runner.
-# No Mac needed: a Linux-hosted clang/ld64 toolchain plus an iPhoneOS SDK,
-# targeting -miphoneos-version-min=6.0. Output is fake-signed for jailbreak.
+# No Mac needed: a Linux-hosted clang/ld64 plus an iPhoneOS SDK, targeting
+# -miphoneos-version-min=6.0. Output is fake-signed for jailbroken devices.
 name: iOS 6 probe
 
 on:
@@ -20,14 +20,6 @@ jobs:
           curl -sSL -o /tmp/tc.tar.xz \
             https://github.com/kabiroberai/swift-toolchain-linux/releases/download/v2.3.0/swift-5.8-ubuntu22.04.tar.xz
           tar -xf /tmp/tc.tar.xz -C $HOME/toolchain --strip-components=1
-          echo "--- top level ---"
-          ls -la $HOME/toolchain
-          echo "--- usr/bin ---"
-          ls -la $HOME/toolchain/usr/bin 2>/dev/null | head -40
-          echo "--- anything named clang ---"
-          find $HOME/toolchain -maxdepth 5 -name 'clang*' | head -20
-          echo "--- linkers ---"
-          find $HOME/toolchain -maxdepth 5 -name 'ld*' | head -20
 
       - name: Fetch iPhoneOS SDK
         run: git clone --depth 1 https://github.com/theos/sdks.git $HOME/sdks
@@ -41,48 +33,44 @@ jobs:
           python3 -c "d=open('ca_bundle.pem','rb').read(); open('ca_bundle.h','w').write('static const char CA_BUNDLE_PEM[] = {'+','.join(str(b) for b in d)+',0};')"
           wc -c ca_bundle.h
 
-      - name: Patch SDK (add missing liblaunch stub)
+      - name: Patch SDK (libSystem re-exports a liblaunch the SDK omits)
         run: |
           SDK=$(ls -d $HOME/sdks/iPhoneOS*.sdk | sort -V | head -1)
-          echo "--- existing tbd format (libcache) ---"
-          head -12 "$SDK/usr/lib/system/libcache.tbd"
-          echo "--- creating liblaunch stub ---"
-          cat > "$SDK/usr/lib/system/liblaunch.tbd" <<'TBD'
---- !tapi-tbd-v3
-archs:           [ armv7, armv7s, arm64 ]
-uuids:           []
-platform:        ios
-install-name:    /usr/lib/system/liblaunch.dylib
-current-version: 1.0.0
-compatibility-version: 1.0.0
-objc-constraint: none
-exports:
-  - archs:           [ armv7, armv7s, arm64 ]
-    symbols:         [ ]
-...
-TBD
-          ls -la "$SDK/usr/lib/system/liblaunch.tbd"
+          python3 - <<'PY'
+          import os, glob
+          sdk = sorted(glob.glob(os.path.expanduser('~/sdks/iPhoneOS*.sdk')))[0]
+          path = os.path.join(sdk, 'usr/lib/system/liblaunch.tbd')
+          tbd = [
+            '--- !tapi-tbd-v3',
+            'archs:           [ armv7, armv7s, arm64 ]',
+            'uuids:           []',
+            'platform:        ios',
+            'install-name:    /usr/lib/system/liblaunch.dylib',
+            'current-version: 1.0.0',
+            'compatibility-version: 1.0.0',
+            'objc-constraint: none',
+            'exports:',
+            '  - archs:           [ armv7, armv7s, arm64 ]',
+            '    symbols:         [ ]',
+            '...',
+            '',
+          ]
+          open(path, 'w').write(chr(10).join(tbd))
+          print('stub written to', path)
+          PY
 
       - name: Build for armv7 / iOS 6
         working-directory: ios6
         run: |
           set -x
           CLANG=$(find $HOME/toolchain -name 'clang' | head -1)
-          if [ -z "$CLANG" ]; then CLANG=$(find $HOME/toolchain -name 'clang-*' | head -1); fi
           SDK=$(ls -d $HOME/sdks/iPhoneOS*.sdk | sort -V | head -1)
-          echo "clang: $CLANG"
-          echo "sdk:   $SDK"
-          ls $SDK/usr/lib/system/ | head -30
-          "$CLANG" --version
-
-          # mbedTLS is compiled straight in — no ar/ranlib needed on Linux.
           "$CLANG" \
             -target armv7-apple-ios6.0 \
             -isysroot "$SDK" \
             -miphoneos-version-min=6.0 \
             -arch armv7 \
             -O2 -fno-strict-aliasing -DMBEDTLS_PLATFORM_MS_TIME_ALT \
-            -Wl,-no_implicit_dylibs \
             -I "$HOME/mbedtls/include" -I . \
             tlstest.c $HOME/mbedtls/library/*.c \
             -o dtf-probe
