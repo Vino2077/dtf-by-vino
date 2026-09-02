@@ -91,7 +91,7 @@ NSArray *DTFPostsFromItems(NSArray *items)
 /* ------------------------------------------------------------------ */
 
 @implementation PostListViewController
-@synthesize posts, statusLabel, loading, canPaginate;
+@synthesize posts, statusLabel, loading, canPaginate, noMore;
 
 - (void)dealloc { [posts release]; [statusLabel release]; [super dealloc]; }
 
@@ -117,6 +117,7 @@ NSArray *DTFPostsFromItems(NSArray *items)
 - (void)reload
 {
     [self.posts removeAllObjects];
+    self.noMore = NO;
     [self.tableView reloadData];
     self.statusLabel.hidden = NO;
     self.statusLabel.text = @"Загружаю…";
@@ -128,6 +129,7 @@ NSArray *DTFPostsFromItems(NSArray *items)
 - (void)finishWith:(NSArray *)fresh problem:(NSString *)problem
 {
     self.loading = NO;
+    if ([fresh count] == 0) self.noMore = YES;
     if ([fresh count] > 0) [self.posts addObjectsFromArray:fresh];
     if ([self.posts count] > 0) {
         self.statusLabel.hidden = YES;
@@ -185,7 +187,8 @@ NSArray *DTFPostsFromItems(NSArray *items)
         cell.imageView.image = nil;
     }
 
-    if (self.canPaginate && ip.row == (NSInteger)[self.posts count] - 1 && !self.loading) {
+    if (self.canPaginate && !self.noMore && !self.loading &&
+        ip.row == (NSInteger)[self.posts count] - 1) {
         [self loadPage];
     }
     return cell;

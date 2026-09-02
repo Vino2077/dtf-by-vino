@@ -27,6 +27,7 @@ NSString *DTFAgo(NSTimeInterval unixTime);
 @property (nonatomic, retain) UILabel *statusLabel;
 @property (nonatomic, assign) BOOL loading;
 @property (nonatomic, assign) BOOL canPaginate;
+@property (nonatomic, assign) BOOL noMore;
 - (void)reload;
 - (void)loadPage;                       /* override */
 - (void)finishWith:(NSArray *)fresh problem:(NSString *)problem;
