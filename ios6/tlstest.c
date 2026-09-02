@@ -29,6 +29,20 @@
 /* ca_bundle.h is generated at build time from ca_bundle.pem */
 #include "ca_bundle.h"
 
+#include <sys/time.h>
+#include "mbedtls/platform_time.h"
+#include "psa/crypto.h"
+
+/* iOS gained clock_gettime only in 10.0, so mbedTLS's default millisecond
+   clock cannot compile against a 6.0 deployment target. Supply our own via
+   gettimeofday (MBEDTLS_PLATFORM_MS_TIME_ALT is set on the command line). */
+mbedtls_ms_time_t mbedtls_ms_time(void)
+{
+    struct timeval tv;
+    gettimeofday(&tv, NULL);
+    return (mbedtls_ms_time_t)tv.tv_sec * 1000 + (mbedtls_ms_time_t)tv.tv_usec / 1000;
+}
+
 static void fail(const char *stage, int ret) {
     char buf[256];
     mbedtls_strerror(ret, buf, sizeof(buf));
@@ -45,6 +59,7 @@ int main(void) {
     mbedtls_x509_crt cacert;
 
     setvbuf(stdout, NULL, _IONBF, 0);
+    psa_crypto_init();
     printf("=== DTF probe for iOS 6 ===\n");
     printf("target: https://%s%s\n\n", HOST, PATH);
 
