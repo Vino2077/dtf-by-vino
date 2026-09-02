@@ -55,8 +55,8 @@ jobs:
             -fobjc-exceptions \
             -DMBEDTLS_PLATFORM_MS_TIME_ALT \
             -I "$HOME/mbedtls/include" -I . \
-            -framework UIKit -framework Foundation -framework CoreGraphics \
-            main.m dtf_net.m libc_shim.c $HOME/mbedtls/library/*.c \
+            -framework UIKit -framework Foundation -framework CoreGraphics -framework QuartzCore \
+            main.m dtf_net.m dtf_api.m dtf_ui.m vc_feed.m vc_post.m vc_social.m vc_chats.m vc_settings.m libc_shim.c $HOME/mbedtls/library/*.c \
             -o DTF
           ls -la DTF
 

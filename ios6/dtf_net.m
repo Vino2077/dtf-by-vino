@@ -12,7 +12,10 @@
 
 #include "ca_bundle.h"
 
-/* iOS gained clock_gettime only in 10.0, so mbedTLS's own millisecond clock
+static NSString *const kTokenKey = @"dtf_token";
+static NSString *const kUserAgent = @"dtf-app/2.0.0 (iOS6; ru)";
+
+/* iOS gained clock_gettime only in 10.0, so the mbedTLS millisecond clock
    cannot compile against a 6.0 deployment target. */
 mbedtls_ms_time_t mbedtls_ms_time(void)
 {
@@ -21,20 +24,39 @@ mbedtls_ms_time_t mbedtls_ms_time(void)
     return (mbedtls_ms_time_t)tv.tv_sec * 1000 + (mbedtls_ms_time_t)tv.tv_usec / 1000;
 }
 
-static NSString *DTFErr(const char *stage, int ret)
+NSString *DTFToken(void)
+{
+    NSString *t = [[NSUserDefaults standardUserDefaults] objectForKey:kTokenKey];
+    return [t length] > 0 ? t : nil;
+}
+
+void DTFSetToken(NSString *token)
+{
+    NSUserDefaults *d = [NSUserDefaults standardUserDefaults];
+    if ([token length] > 0) {
+        [d setObject:token forKey:kTokenKey];
+    } else {
+        [d removeObjectForKey:kTokenKey];
+    }
+    [d synchronize];
+}
+
+static NSString *DTFErrText(const char *stage, int ret)
 {
     char buf[192];
     mbedtls_strerror(ret, buf, sizeof(buf));
-    return [NSString stringWithFormat:@"%s: -0x%04x (%s)",
-            stage, (unsigned int)-ret, buf];
+    return [NSString stringWithFormat:@"%s: -0x%04x (%s)", stage, (unsigned int)-ret, buf];
 }
 
-NSData *DTFGet(NSString *host, NSString *path, NSString **error)
+/* One request/response cycle over a fresh TLS connection. HTTP/1.0 is used so
+   the server answers with a plain body and closes — no chunked decoding. */
+static NSData *DTFRequest(NSString *host, NSString *path, NSString *method,
+                          NSData *body, NSString *contentType, NSString **error)
 {
     static dispatch_once_t once;
     dispatch_once(&once, ^{ psa_crypto_init(); });
 
-    NSMutableData *body = nil;
+    NSData *result = nil;
     int ret;
 
     mbedtls_net_context server;
@@ -53,13 +75,10 @@ NSData *DTFGet(NSString *host, NSString *path, NSString **error)
 
     const char *chost = [host UTF8String];
 
-#define DTF_FAIL(stage, code) do { \
-        if (error) *error = DTFErr(stage, code); \
-        goto cleanup; \
-    } while (0)
+#define DTF_FAIL(stage, code) do { if (error) *error = DTFErrText(stage, code); goto cleanup; } while (0)
 
     ret = mbedtls_ctr_drbg_seed(&ctr_drbg, mbedtls_entropy_func, &entropy,
-                               (const unsigned char *)"dtf-ios6", 8);
+                                (const unsigned char *)"dtf-ios6", 8);
     if (ret != 0) DTF_FAIL("rng", ret);
 
     ret = mbedtls_x509_crt_parse(&cacert, (const unsigned char *)CA_BUNDLE_PEM,
@@ -90,16 +109,24 @@ NSData *DTFGet(NSString *host, NSString *path, NSString **error)
         }
     }
 
-    /* HTTP/1.0 so the server answers with a plain body and closes — no need to
-       decode chunked transfer encoding. */
     {
-        NSString *req = [NSString stringWithFormat:
-            @"GET %@ HTTP/1.0\r\nHost: %@\r\n"
-             "User-Agent: DTF-by-Vino-iOS6\r\n"
-             "Accept: application/json\r\n\r\n", path, host];
-        const char *creq = [req UTF8String];
-        size_t left = strlen(creq);
-        const unsigned char *p = (const unsigned char *)creq;
+        NSMutableString *head = [NSMutableString stringWithFormat:
+            @"%@ %@ HTTP/1.0\r\nHost: %@\r\nUser-Agent: %@\r\nAccept: application/json\r\n",
+            method, path, host, kUserAgent];
+        NSString *token = DTFToken();
+        if (token != nil) [head appendFormat:@"X-Device-Token: %@\r\n", token];
+        if (body != nil) {
+            [head appendFormat:@"Content-Type: %@\r\nContent-Length: %d\r\n",
+                contentType, (int)[body length]];
+        }
+        [head appendString:@"\r\n"];
+
+        NSMutableData *out = [NSMutableData dataWithData:
+            [head dataUsingEncoding:NSUTF8StringEncoding]];
+        if (body != nil) [out appendData:body];
+
+        const unsigned char *p = (const unsigned char *)[out bytes];
+        size_t left = [out length];
         while (left > 0) {
             ret = mbedtls_ssl_write(&ssl, p, left);
             if (ret == MBEDTLS_ERR_SSL_WANT_READ || ret == MBEDTLS_ERR_SSL_WANT_WRITE) continue;
@@ -116,25 +143,21 @@ NSData *DTFGet(NSString *host, NSString *path, NSString **error)
             ret = mbedtls_ssl_read(&ssl, buf, sizeof(buf));
             if (ret == MBEDTLS_ERR_SSL_WANT_READ || ret == MBEDTLS_ERR_SSL_WANT_WRITE) continue;
             if (ret == MBEDTLS_ERR_SSL_PEER_CLOSE_NOTIFY || ret == 0) break;
-            if (ret < 0) break;   /* connection closed mid-stream: use what we have */
+            if (ret < 0) break;    /* closed mid-stream: keep what arrived */
             [raw appendBytes:buf length:(NSUInteger)ret];
         }
 
-        /* Split off the headers: body starts after the blank line. */
         const char *bytes = (const char *)[raw bytes];
         NSUInteger len = [raw length];
         NSUInteger start = 0;
         for (NSUInteger i = 0; i + 3 < len; i++) {
             if (bytes[i] == '\r' && bytes[i+1] == '\n' &&
-                bytes[i+2] == '\r' && bytes[i+3] == '\n') {
-                start = i + 4;
-                break;
-            }
+                bytes[i+2] == '\r' && bytes[i+3] == '\n') { start = i + 4; break; }
         }
         if (start == 0 || start >= len) {
-            if (error) *error = @"empty or malformed response";
+            if (error) *error = @"пустой ответ сервера";
         } else {
-            body = [NSMutableData dataWithBytes:bytes + start length:len - start];
+            result = [NSData dataWithBytes:bytes + start length:len - start];
         }
     }
 
@@ -148,5 +171,45 @@ cleanup:
     mbedtls_ssl_config_free(&conf);
     mbedtls_ctr_drbg_free(&ctr_drbg);
     mbedtls_entropy_free(&entropy);
-    return body;
+    return result;
+}
+
+NSData *DTFGet(NSString *host, NSString *path, NSString **error)
+{
+    return DTFRequest(host, path, @"GET", nil, nil, error);
+}
+
+static NSString *DTFEscape(NSString *s)
+{
+    return [(NSString *)CFURLCreateStringByAddingPercentEscapes(
+        NULL, (CFStringRef)s, NULL, CFSTR(":/?#[]@!$&'()*+,;="),
+        kCFStringEncodingUTF8) autorelease];
+}
+
+NSData *DTFPostForm(NSString *host, NSString *path, NSDictionary *fields, NSString **error)
+{
+    NSMutableString *b = [NSMutableString string];
+    for (NSString *k in fields) {
+        if ([b length] > 0) [b appendString:@"&"];
+        [b appendFormat:@"%@=%@", k, DTFEscape([[fields objectForKey:k] description])];
+    }
+    return DTFRequest(host, path, @"POST",
+                      [b dataUsingEncoding:NSUTF8StringEncoding],
+                      @"application/x-www-form-urlencoded; charset=utf-8", error);
+}
+
+NSData *DTFPostMultipart(NSString *host, NSString *path, NSDictionary *fields, NSString **error)
+{
+    NSString *boundary = @"----dtfios6boundary7a1c";
+    NSMutableData *body = [NSMutableData data];
+    for (NSString *k in fields) {
+        NSString *part = [NSString stringWithFormat:
+            @"--%@\r\nContent-Disposition: form-data; name=\"%@\"\r\n\r\n%@\r\n",
+            boundary, k, [[fields objectForKey:k] description]];
+        [body appendData:[part dataUsingEncoding:NSUTF8StringEncoding]];
+    }
+    [body appendData:[[NSString stringWithFormat:@"--%@--\r\n", boundary]
+                        dataUsingEncoding:NSUTF8StringEncoding]];
+    NSString *ctype = [NSString stringWithFormat:@"multipart/form-data; boundary=%@", boundary];
+    return DTFRequest(host, path, @"POST", body, ctype, error);
 }
