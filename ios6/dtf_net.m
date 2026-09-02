@@ -1,6 +1,7 @@
 #import "dtf_net.h"
 
 #include <sys/time.h>
+#include <sys/socket.h>
 #include "mbedtls/net_sockets.h"
 #include "mbedtls/ssl.h"
 #include "mbedtls/entropy.h"
@@ -88,6 +89,16 @@ static NSData *DTFRequest(NSString *host, NSString *path, NSString *method,
     ret = mbedtls_net_connect(&server, chost, "443", MBEDTLS_NET_PROTO_TCP);
     if (ret != 0) DTF_FAIL("connect", ret);
 
+    /* Without these a stalled server leaves the caller waiting forever, and
+       the screen just sits there with a spinner and no explanation. */
+    {
+        struct timeval tv;
+        tv.tv_sec = 25;
+        tv.tv_usec = 0;
+        setsockopt(server.fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+        setsockopt(server.fd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
+    }
+
     ret = mbedtls_ssl_config_defaults(&conf, MBEDTLS_SSL_IS_CLIENT,
                                       MBEDTLS_SSL_TRANSPORT_STREAM,
                                       MBEDTLS_SSL_PRESET_DEFAULT);
@@ -96,12 +107,13 @@ static NSData *DTFRequest(NSString *host, NSString *path, NSString *method,
     mbedtls_ssl_conf_authmode(&conf, MBEDTLS_SSL_VERIFY_REQUIRED);
     mbedtls_ssl_conf_ca_chain(&conf, &cacert, NULL);
     mbedtls_ssl_conf_rng(&conf, mbedtls_ctr_drbg_random, &ctr_drbg);
+    mbedtls_ssl_conf_read_timeout(&conf, 25000);
 
     ret = mbedtls_ssl_setup(&ssl, &conf);
     if (ret != 0) DTF_FAIL("setup", ret);
     ret = mbedtls_ssl_set_hostname(&ssl, chost);
     if (ret != 0) DTF_FAIL("sni", ret);
-    mbedtls_ssl_set_bio(&ssl, &server, mbedtls_net_send, mbedtls_net_recv, NULL);
+    mbedtls_ssl_set_bio(&ssl, &server, mbedtls_net_send, NULL, mbedtls_net_recv_timeout);
 
     while ((ret = mbedtls_ssl_handshake(&ssl)) != 0) {
         if (ret != MBEDTLS_ERR_SSL_WANT_READ && ret != MBEDTLS_ERR_SSL_WANT_WRITE) {

@@ -213,6 +213,15 @@ static id DTFApiGet(NSString *version, NSString *rest, NSString **error)
     return DTFDict(r);
 }
 
++ (NSArray *)subsiteComments:(NSInteger)subsiteId error:(NSString **)error
+{
+    id r = DTFApiGet(kApiDefault,
+        [NSString stringWithFormat:@"comments?subsiteId=%d&sorting=date&count=30",
+         (int)subsiteId], error);
+    NSDictionary *d = DTFDict(r);
+    return d != nil ? DTFArr([d objectForKey:@"items"]) : DTFArr(r);
+}
+
 + (NSArray *)channelsWithError:(NSString **)error
 {
     if (![self isLoggedIn]) { if (error) *error = @"нужен вход в аккаунт"; return nil; }
@@ -256,7 +265,11 @@ static id DTFApiGet(NSString *version, NSString *rest, NSString **error)
     if (d == nil) { if (error) *error = err ? err : @"нет ответа"; return nil; }
 
     id root = [NSJSONSerialization JSONObjectWithData:d options:0 error:NULL];
-    NSDictionary *result = DTFDict([DTFDict(root) objectForKey:@"result"]);
+    NSDictionary *rootDict = DTFDict(root);
+    /* v3.0 auth answers with `data`, not the `result` every other route uses. */
+    NSDictionary *result = DTFDict([rootDict objectForKey:@"data"]);
+    if (result == nil) result = DTFDict([rootDict objectForKey:@"result"]);
+
     /* The token field has moved around between versions, so try the plausible
        names and keep the first one the server actually accepts. */
     NSArray *keys = [NSArray arrayWithObjects:@"token", @"accessToken",
@@ -265,10 +278,20 @@ static id DTFApiGet(NSString *version, NSString *rest, NSString **error)
         NSString *t = DTFStr([result objectForKey:k]);
         if ([t length] > 10 && [self validateToken:t]) return t;
     }
+
     if (error) {
-        id msg = [DTFDict(root) objectForKey:@"message"];
-        *error = [msg isKindOfClass:[NSString class]] && [msg length] > 0
-                 ? msg : @"почта или пароль не подошли";
+        id msg = [rootDict objectForKey:@"message"];
+        if ([msg isKindOfClass:[NSString class]] && [msg length] > 0) {
+            /* Surface the server's own words — "Too many calls" is common here
+               and means waiting, not wrong credentials. */
+            *error = [msg isEqualToString:@"Too many calls"]
+                ? @"Сервер просит подождать (слишком часто). Попробуй через минуту или войди по токену."
+                : msg;
+        } else if (result != nil) {
+            *error = @"Сервер не вернул токен — войди по токену ниже.";
+        } else {
+            *error = @"Почта или пароль не подошли";
+        }
     }
     return nil;
 }

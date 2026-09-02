@@ -3,6 +3,9 @@
 #import "dtf_ui.h"
 #import "dtf_net.h"
 
+/// Strips tags so a snippet fits one table row (defined below).
+static NSString *DTFPlain(NSString *html);
+
 /* ------------------------------------------------------------------ */
 /* Search                                                              */
 /* ------------------------------------------------------------------ */
@@ -92,19 +95,209 @@
 /* Someone else's blog                                                 */
 /* ------------------------------------------------------------------ */
 
+@interface SubsiteViewController ()
+@property (nonatomic, retain) NSDictionary *info;
+@property (nonatomic, retain) NSMutableArray *authorComments;
+@property (nonatomic, assign) BOOL commentsMode;
+@property (nonatomic, retain) UILabel *nameLabel;
+@property (nonatomic, retain) UILabel *descLabel;
+@property (nonatomic, retain) UILabel *countersLabel;
+@property (nonatomic, retain) UIImageView *avatarView;
+@property (nonatomic, retain) UIImageView *coverView;
+@end
+
 @implementation SubsiteViewController
 @synthesize subsiteId, subsiteName;
+@synthesize info, authorComments, commentsMode;
+@synthesize nameLabel, descLabel, countersLabel, avatarView, coverView;
 
-- (void)dealloc { [subsiteName release]; [super dealloc]; }
+- (void)dealloc
+{
+    [subsiteName release]; [info release]; [authorComments release];
+    [nameLabel release]; [descLabel release]; [countersLabel release];
+    [avatarView release]; [coverView release];
+    [super dealloc];
+}
+
+/* Banner, avatar, name, description, counters and the posts/comments switch —
+   the same shape the blog has on the site. */
+- (UIView *)buildHeader
+{
+    CGFloat w = self.view.bounds.size.width;
+    UIView *head = [[[UIView alloc] initWithFrame:CGRectMake(0, 0, w, 216.0f)] autorelease];
+    head.backgroundColor = [UIColor colorWithWhite:0.98f alpha:1.0f];
+
+    self.coverView = [[[UIImageView alloc] initWithFrame:
+        CGRectMake(0.0f, 0.0f, w, 84.0f)] autorelease];
+    self.coverView.contentMode = UIViewContentModeScaleAspectFill;
+    self.coverView.clipsToBounds = YES;
+    self.coverView.backgroundColor = [UIColor colorWithWhite:0.80f alpha:1.0f];
+    self.coverView.autoresizingMask = UIViewAutoresizingFlexibleWidth;
+    [head addSubview:self.coverView];
+
+    self.avatarView = [[[UIImageView alloc] initWithFrame:
+        CGRectMake(12.0f, 50.0f, 64.0f, 64.0f)] autorelease];
+    self.avatarView.contentMode = UIViewContentModeScaleAspectFill;
+    self.avatarView.clipsToBounds = YES;
+    self.avatarView.layer.cornerRadius = 8.0f;
+    self.avatarView.layer.borderWidth = 2.0f;
+    self.avatarView.layer.borderColor = [[UIColor whiteColor] CGColor];
+    self.avatarView.image = DTFPlaceholder(64.0f);
+    [head addSubview:self.avatarView];
+
+    self.nameLabel = [[[UILabel alloc] initWithFrame:
+        CGRectMake(86.0f, 88.0f, w - 98.0f, 22.0f)] autorelease];
+    self.nameLabel.font = [UIFont boldSystemFontOfSize:17.0f];
+    self.nameLabel.text = [self.subsiteName length] > 0 ? self.subsiteName : @"Блог";
+    self.nameLabel.autoresizingMask = UIViewAutoresizingFlexibleWidth;
+    DTFLetterpress(self.nameLabel);
+    [head addSubview:self.nameLabel];
+
+    self.countersLabel = [[[UILabel alloc] initWithFrame:
+        CGRectMake(12.0f, 120.0f, w - 24.0f, 18.0f)] autorelease];
+    self.countersLabel.font = [UIFont systemFontOfSize:12.0f];
+    self.countersLabel.textColor = [UIColor colorWithWhite:0.35f alpha:1.0f];
+    self.countersLabel.autoresizingMask = UIViewAutoresizingFlexibleWidth;
+    DTFLetterpress(self.countersLabel);
+    [head addSubview:self.countersLabel];
+
+    self.descLabel = [[[UILabel alloc] initWithFrame:
+        CGRectMake(12.0f, 140.0f, w - 24.0f, 32.0f)] autorelease];
+    self.descLabel.font = [UIFont systemFontOfSize:12.0f];
+    self.descLabel.numberOfLines = 2;
+    self.descLabel.textColor = [UIColor colorWithWhite:0.28f alpha:1.0f];
+    self.descLabel.autoresizingMask = UIViewAutoresizingFlexibleWidth;
+    DTFLetterpress(self.descLabel);
+    [head addSubview:self.descLabel];
+
+    UISegmentedControl *seg = [[[UISegmentedControl alloc] initWithItems:
+        [NSArray arrayWithObjects:@"Посты", @"Комментарии", nil]] autorelease];
+    seg.frame = CGRectMake(12.0f, 176.0f, w - 24.0f, 30.0f);
+    seg.selectedSegmentIndex = 0;
+    seg.segmentedControlStyle = UISegmentedControlStyleBar;
+    seg.tintColor = DTFBlue();
+    seg.autoresizingMask = UIViewAutoresizingFlexibleWidth;
+    [seg addTarget:self action:@selector(switchMode:)
+        forControlEvents:UIControlEventValueChanged];
+    [head addSubview:seg];
+
+    return head;
+}
 
 - (void)viewDidLoad
 {
     [super viewDidLoad];
     self.title = [self.subsiteName length] > 0 ? self.subsiteName : @"Блог";
+    self.authorComments = [NSMutableArray array];
     self.navigationItem.rightBarButtonItem = [[[UIBarButtonItem alloc]
         initWithTitle:@"Подписаться" style:UIBarButtonItemStyleBordered
                target:self action:@selector(subscribe)] autorelease];
+
+    self.tableView.tableHeaderView = [self buildHeader];
+    [self loadInfo];
     [self reload];
+}
+
+- (void)loadInfo
+{
+    NSInteger sid = self.subsiteId;
+    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
+        NSDictionary *s = [DTFApi subsite:sid error:NULL];
+        if (s == nil) return;
+        dispatch_async(dispatch_get_main_queue(), ^{
+            self.info = s;
+            NSString *name = DTFStr([s objectForKey:@"name"]);
+            if ([name length] > 0) { self.nameLabel.text = name; self.title = name; }
+
+            NSString *desc = DTFStr([s objectForKey:@"description"]);
+            self.descLabel.text = [desc length] > 0 ? desc : @"";
+
+            NSDictionary *c = DTFDict([s objectForKey:@"counters"]);
+            self.countersLabel.text = [NSString stringWithFormat:
+                @"Рейтинг %d   ·   %d подписчиков   ·   %d подписок",
+                (int)DTFInt([s objectForKey:@"rating"]),
+                (int)DTFInt([c objectForKey:@"subscribers"]),
+                (int)DTFInt([c objectForKey:@"subscriptions"])];
+
+            NSString *av = DTFStr([DTFDict([DTFDict([s objectForKey:@"avatar"])
+                                    objectForKey:@"data"]) objectForKey:@"uuid"]);
+            if ([av length] > 0) [DTFImages loadUuid:av width:128 into:self.avatarView];
+            NSString *cover = DTFStr([DTFDict([DTFDict([s objectForKey:@"cover"])
+                                       objectForKey:@"data"]) objectForKey:@"uuid"]);
+            if ([cover length] > 0) [DTFImages loadUuid:cover width:640 into:self.coverView];
+        });
+    });
+}
+
+- (void)switchMode:(UISegmentedControl *)seg
+{
+    self.commentsMode = (seg.selectedSegmentIndex == 1);
+    if (self.commentsMode && [self.authorComments count] == 0) {
+        [self loadAuthorComments];
+    } else {
+        [self.tableView reloadData];
+    }
+}
+
+- (void)loadAuthorComments
+{
+    self.statusLabel.hidden = NO;
+    self.statusLabel.text = @"Загружаю комментарии…";
+    NSInteger sid = self.subsiteId;
+    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
+        NSString *err = nil;
+        NSArray *fresh = [DTFApi subsiteComments:sid error:&err];
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [self.authorComments removeAllObjects];
+            for (id c in fresh) if (DTFDict(c) != nil) [self.authorComments addObject:c];
+            self.statusLabel.hidden = [self.authorComments count] > 0;
+            self.statusLabel.text = err ? err : @"Комментариев нет";
+            [self.tableView reloadData];
+        });
+    });
+}
+
+/* In comments mode the table shows the author's comments instead of posts. */
+- (NSInteger)tableView:(UITableView *)tv numberOfRowsInSection:(NSInteger)s
+{
+    if (self.commentsMode) return (NSInteger)[self.authorComments count];
+    return [super tableView:tv numberOfRowsInSection:s];
+}
+
+- (UITableViewCell *)tableView:(UITableView *)tv cellForRowAtIndexPath:(NSIndexPath *)ip
+{
+    if (!self.commentsMode) return [super tableView:tv cellForRowAtIndexPath:ip];
+
+    static NSString *ident = @"acmt";
+    UITableViewCell *cell = [tv dequeueReusableCellWithIdentifier:ident];
+    if (cell == nil) {
+        cell = [[[UITableViewCell alloc] initWithStyle:UITableViewCellStyleSubtitle
+                                       reuseIdentifier:ident] autorelease];
+        cell.textLabel.numberOfLines = 3;
+        cell.textLabel.font = [UIFont systemFontOfSize:13.0f];
+        cell.detailTextLabel.font = [UIFont systemFontOfSize:11.0f];
+        cell.detailTextLabel.textColor = [UIColor grayColor];
+        DTFGradientCell(cell);
+    }
+    NSDictionary *c = DTFDict([self.authorComments objectAtIndex:(NSUInteger)ip.row]);
+    cell.textLabel.text = DTFPlain(DTFStr([c objectForKey:@"text"]));
+    cell.detailTextLabel.text = DTFAgo((NSTimeInterval)DTFInt([c objectForKey:@"date"]));
+    return cell;
+}
+
+- (void)tableView:(UITableView *)tv didSelectRowAtIndexPath:(NSIndexPath *)ip
+{
+    if (!self.commentsMode) { [super tableView:tv didSelectRowAtIndexPath:ip]; return; }
+    [tv deselectRowAtIndexPath:ip animated:YES];
+
+    NSDictionary *c = DTFDict([self.authorComments objectAtIndex:(NSUInteger)ip.row]);
+    NSInteger pid = DTFInt([c objectForKey:@"contentId"]);
+    if (pid <= 0) pid = DTFInt([DTFDict([c objectForKey:@"content"]) objectForKey:@"id"]);
+    if (pid <= 0) return;
+
+    PostViewController *vc = [[[PostViewController alloc] init] autorelease];
+    vc.postId = pid;
+    [self.navigationController pushViewController:vc animated:YES];
 }
 
 - (void)subscribe

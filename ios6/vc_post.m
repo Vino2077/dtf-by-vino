@@ -30,7 +30,42 @@ static NSString *DTFReactionUuid(NSInteger rid)
             @"9368c0d2-e9e3-55c8-b633-c44c82095226", @"13",
             @"6aa490dc-b161-57ac-ad47-1f6a4946b513", @"14",
             @"898d07e7-06ea-5ff7-9ad6-8f74eb4e6f04", @"15",
-            @"825e5ec2-bd20-5d7b-a681-f0fd66de0c21", @"16", nil];
+            @"825e5ec2-bd20-5d7b-a681-f0fd66de0c21", @"16",
+            @"f8001ccc-dbc1-5c00-8991-d864aad61ef3", @"17",
+            @"55b61666-fa06-55cb-90d2-2a53ee2bf386", @"18",
+            @"ba93fedc-c5b7-5cf6-82c4-7cdb0fa6a6a2", @"19",
+            @"ded55fdc-8ecf-5de9-9912-13e748bdc30f", @"20",
+            @"d9935395-45e1-5930-93cf-44581c2ce294", @"21",
+            @"7f766c9a-3720-5eaf-9a1a-3d0038876af7", @"22",
+            @"88faa3a8-281d-5f0d-8e9f-bd23d541d33b", @"23",
+            @"36cfdc28-ced9-5e6f-8195-e75975bc9f31", @"24",
+            @"cdbfe605-aad2-57e6-abe3-df621c6b1efc", @"25",
+            @"4f273793-7fbe-5b4f-9818-1d62885511b3", @"26",
+            @"79146d35-4e27-50ac-be61-134925bb8c28", @"28",
+            @"8c0b9c07-6fe0-55f1-b485-c62d41484e57", @"29",
+            @"49d316f2-0509-563f-9061-35fd33b3aa5e", @"31",
+            @"0d857be0-89c8-5be7-a249-362169b87b17", @"33",
+            @"16998ee5-fad8-5f8b-ba97-e055c92c4192", @"34",
+            @"67c34adc-843c-586c-9058-bc39acc39e82", @"35",
+            @"6169ffa8-feb6-53ba-ba1c-f5aef99c94d0", @"36",
+            @"2e83eb55-73ea-5578-b192-f3f9875cc819", @"37",
+            @"b86bdd6e-9266-5a7b-8d33-e3daa7b384ed", @"38",
+            @"e03bb7ba-5bc9-58bb-8187-161d8a5faa1f", @"39",
+            @"ba0e3326-e5ea-5d2b-9578-0ceee0c89e8d", @"40",
+            @"d9129c05-752c-5ffc-a84f-7b4ea060333a", @"41",
+            @"4beec4a0-bf55-533f-8038-7025f3ef8f92", @"42",
+            @"8aadf75b-8379-5594-88b0-c75335964842", @"43",
+            @"290b809e-97d2-53fc-beb8-4cce58a57f63", @"44",
+            @"60674a94-589e-5e23-b6d8-7146979059e2", @"45",
+            @"54dbc6e7-ff34-5b33-916d-a85eba29490d", @"46",
+            @"e9ca0e22-64e8-5ea2-aa08-76c1d449f762", @"47",
+            @"289ac805-d268-5f73-b1bd-22df665ab32f", @"48",
+            @"5692c883-47dc-5fed-9f35-8e9117e13608", @"49",
+            @"59d77ded-3da2-5a9f-bde7-32ecc1bb627f", @"50",
+            @"05adc583-5a04-5121-98a2-41ecfab09a6b", @"51",
+            @"05643808-db3c-5de1-999a-f24c4c65c811", @"52",
+            @"83e328b4-2192-5e20-8c2e-e1d8f301020e", @"53",
+            nil];
     }
     return [map objectForKey:[NSString stringWithFormat:@"%d", (int)rid]];
 }
@@ -390,19 +425,44 @@ static NSString *DTFReactionUuid(NSInteger rid)
             [self commentsHtmlPending:withComments];
         });
 
-        /* Pictures last, capped so a photo essay cannot stall the screen for
-           minutes on this hardware. */
-        NSUInteger done = 0;
+        /* Small pictures — avatars and reaction icons — go first: they weigh a
+           couple of kilobytes each, so they can all be on screen before the
+           article photos even start. Waiting for everything before drawing was
+           why they seemed never to arrive. */
+        NSMutableArray *small = [NSMutableArray array];
+        NSMutableArray *large = [NSMutableArray array];
         for (NSString *uuid in withComments) {
-            if (done >= 24) break;
-            int w = [[withComments objectForKey:uuid] intValue];
-            NSData *img = [DTFImages fetchUuid:uuid width:w];
+            [([[withComments objectForKey:uuid] intValue] <= 64 ? small : large)
+                addObject:uuid];
+        }
+
+        NSUInteger done = 0;
+        for (NSString *uuid in small) {
+            if (done >= 40) break;
+            NSData *img = [DTFImages fetchUuid:uuid width:48];
             if ([img length] == 0) continue;
             NSString *b64 = DTFBase64(img);
             dispatch_async(dispatch_get_main_queue(), ^{
                 [self.inlineImages setObject:b64 forKey:uuid];
             });
             done++;
+        }
+        dispatch_async(dispatch_get_main_queue(), ^{ [self renderFull]; });
+
+        /* Then the article photos, redrawing every few so the page fills in
+           instead of sitting unchanged for a minute. */
+        NSUInteger heavy = 0;
+        for (NSString *uuid in large) {
+            if (heavy >= 10) break;
+            NSData *img = [DTFImages fetchUuid:uuid width:300];
+            if ([img length] == 0) continue;
+            NSString *b64 = DTFBase64(img);
+            heavy++;
+            BOOL redraw = (heavy % 3 == 0) || heavy == [large count];
+            dispatch_async(dispatch_get_main_queue(), ^{
+                [self.inlineImages setObject:b64 forKey:uuid];
+                if (redraw) [self renderFull];
+            });
         }
         dispatch_async(dispatch_get_main_queue(), ^{ [self renderFull]; });
     });

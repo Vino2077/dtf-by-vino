@@ -41,6 +41,9 @@ extern NSString *const kApiMessenger;  /* v2.1  — direct messages */
 + (NSDictionary *)subsite:(NSInteger)subsiteId error:(NSString **)error;
 + (NSDictionary *)subsiteTimeline:(NSInteger)subsiteId error:(NSString **)error;
 
+/// Comments written by a blog author.
++ (NSArray *)subsiteComments:(NSInteger)subsiteId error:(NSString **)error;
+
 /* Direct messages. */
 + (NSArray *)channelsWithError:(NSString **)error;
 + (NSArray *)messages:(NSInteger)channelId error:(NSString **)error;
