@@ -3,38 +3,20 @@
 #import "dtf_ui.h"
 #import "dtf_net.h"
 
-/* Reaction icons ship inside the app bundle as rx<id>.png — fetching fifty of
-   them over fresh TLS connections on this hardware was far too slow for them
-   ever to show up. They are read from disk once and kept as base64 so the
-   article view can inline them. */
-static NSString *DTFReactionBase64(NSInteger rid)
-{
-    static NSMutableDictionary *cache = nil;
-    if (cache == nil) cache = [[NSMutableDictionary alloc] init];
-
-    NSString *key = [NSString stringWithFormat:@"%d", (int)rid];
-    NSString *hit = [cache objectForKey:key];
-    if (hit != nil) return [hit length] > 0 ? hit : nil;
-
-    NSString *file = [[NSBundle mainBundle]
-        pathForResource:[NSString stringWithFormat:@"rx%d", (int)rid] ofType:@"png"];
-    NSData *d = file != nil ? [NSData dataWithContentsOfFile:file] : nil;
-    NSString *b64 = [d length] > 0 ? DTFBase64(d) : @"";
-    [cache setObject:b64 forKey:key];
-    return [b64 length] > 0 ? b64 : nil;
-}
-
+/* Reaction icons ship inside the app bundle as rx<id>.png.
+   They are referenced by filename, never inlined: a post with a hundred
+   comments repeats the same few icons hundreds of times, and embedding each
+   copy as base64 built a multi-megabyte page that this device could not hold.
+   The web view is given the bundle as its base URL so it can read them off
+   disk directly. */
 static UIImage *DTFReactionImage(NSInteger rid)
 {
     return [UIImage imageNamed:[NSString stringWithFormat:@"rx%d.png", (int)rid]];
 }
 
-/* One <img> for a reaction, straight from the bundle. */
 static NSString *DTFReactionTag(NSInteger rid)
 {
-    NSString *b64 = DTFReactionBase64(rid);
-    if (b64 == nil) return [NSString stringWithFormat:@"#%d", (int)rid];
-    return [NSString stringWithFormat:@"<img class='rx' src='data:image/png;base64,%@'>", b64];
+    return [NSString stringWithFormat:@"<img class='rx' src='rx%d.png'>", (int)rid];
 }
 
 /* Tallies rendered as pills, used under both posts and comments. */
@@ -168,16 +150,21 @@ static NSString *DTFReactionPills(id reactions)
                   width:(int)width
                   class:(NSString *)cls
 {
-    NSString *b64 = [self.inlineImages objectForKey:uuid];
-    if (b64 != nil) {
-        return [NSString stringWithFormat:@"<img class='%@' src='data:image/jpeg;base64,%@'>",
-                cls ? cls : @"", b64];
+    NSString *file = [DTFImages readyPathFor:uuid width:width];
+    if (file != nil) {
+        return [NSString stringWithFormat:@"<img class='%@' src='file://%@'>",
+                cls ? cls : @"", file];
     }
     if ([pending objectForKey:uuid] == nil) {
         [pending setObject:[NSNumber numberWithInt:width] forKey:uuid];
     }
     if ([cls isEqualToString:@"av"]) return @"<span class='av'></span>";
     return @"<div class='note'>картинка загружается…</div>";
+}
+
+- (NSURL *)baseURL
+{
+    return [NSURL fileURLWithPath:[[NSBundle mainBundle] resourcePath] isDirectory:YES];
 }
 
 - (NSString *)reactionsHtmlPending:(NSMutableDictionary *)pending
@@ -357,7 +344,7 @@ static NSString *DTFReactionPills(id reactions)
     NSMutableDictionary *ignore = [NSMutableDictionary dictionary];
     NSString *page = [NSString stringWithFormat:@"%@%@%@</body></html>",
         DTFHtmlHead(), [self bodyHtmlPending:ignore], [self commentsHtmlPending:ignore]];
-    [self.web loadHTMLString:page baseURL:nil];
+    [self.web loadHTMLString:page baseURL:[self baseURL]];
 }
 
 /* ---------------- loading ---------------- */
@@ -374,7 +361,7 @@ static NSString *DTFReactionPills(id reactions)
                 NSString *page = [NSString stringWithFormat:
                     @"%@<div class='note'>Не удалось загрузить пост:<br>%@</div></body></html>",
                     DTFHtmlHead(), err ? err : @"неизвестная ошибка"];
-                [self.web loadHTMLString:page baseURL:nil];
+                [self.web loadHTMLString:page baseURL:[self baseURL]];
             });
             return;
         }
@@ -387,7 +374,7 @@ static NSString *DTFReactionPills(id reactions)
             /* Text first — pictures and comments follow. */
             NSString *page = [NSString stringWithFormat:@"%@%@</body></html>",
                 DTFHtmlHead(), [self bodyHtmlPending:pending]];
-            [self.web loadHTMLString:page baseURL:nil];
+            [self.web loadHTMLString:page baseURL:[self baseURL]];
         });
 
         NSArray *comments = [DTFApi comments:self.postId error:NULL];
@@ -410,16 +397,12 @@ static NSString *DTFReactionPills(id reactions)
                 addObject:uuid];
         }
 
+        /* Fetching writes each picture into the on-disk cache; the page then
+           points at those files, so nothing has to be held in memory. */
         NSUInteger done = 0;
         for (NSString *uuid in small) {
             if (done >= 40) break;
-            NSData *img = [DTFImages fetchUuid:uuid width:48];
-            if ([img length] == 0) continue;
-            NSString *b64 = DTFBase64(img);
-            dispatch_async(dispatch_get_main_queue(), ^{
-                [self.inlineImages setObject:b64 forKey:uuid];
-            });
-            done++;
+            if ([[DTFImages fetchUuid:uuid width:48] length] > 0) done++;
         }
         dispatch_async(dispatch_get_main_queue(), ^{ [self renderFull]; });
 
@@ -428,15 +411,11 @@ static NSString *DTFReactionPills(id reactions)
         NSUInteger heavy = 0;
         for (NSString *uuid in large) {
             if (heavy >= 10) break;
-            NSData *img = [DTFImages fetchUuid:uuid width:300];
-            if ([img length] == 0) continue;
-            NSString *b64 = DTFBase64(img);
+            if ([[DTFImages fetchUuid:uuid width:300] length] == 0) continue;
             heavy++;
-            BOOL redraw = (heavy % 3 == 0) || heavy == [large count];
-            dispatch_async(dispatch_get_main_queue(), ^{
-                [self.inlineImages setObject:b64 forKey:uuid];
-                if (redraw) [self renderFull];
-            });
+            if (heavy % 3 == 0) {
+                dispatch_async(dispatch_get_main_queue(), ^{ [self renderFull]; });
+            }
         }
         dispatch_async(dispatch_get_main_queue(), ^{ [self renderFull]; });
     });

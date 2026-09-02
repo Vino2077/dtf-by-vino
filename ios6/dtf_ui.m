@@ -303,3 +303,14 @@ NSString *DTFHtmlHead(void)
             "border-radius:10px;padding:1px 8px;font-size:12px;color:#555;margin-right:5px}"
             "</style></head><body>";
 }
+
+@implementation DTFImages (Paths)
+
++ (NSString *)readyPathFor:(NSString *)uuid width:(int)width
+{
+    if ([uuid length] == 0) return nil;
+    NSString *p = [self diskPathFor:uuid width:width];
+    return [[NSFileManager defaultManager] fileExistsAtPath:p] ? p : nil;
+}
+
+@end

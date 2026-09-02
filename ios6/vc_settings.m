@@ -57,7 +57,7 @@
 - (void)viewDidLoad
 {
     [super viewDidLoad];
-    self.title = @"Вход 0.5";
+    self.title = @"Вход 0.6";
     self.view.backgroundColor = DTFPaper();
 
     [self captionAt:12.0f text:@"ПОЧТА И ПАРОЛЬ"];
@@ -240,7 +240,7 @@ static NSString *const kImagesOn = @"dtf_images_on";
         cell.textLabel.text = @"Очистить кэш картинок";
     } else {
         cell.textLabel.text = @"DTF by Vino для iOS 6";
-        cell.detailTextLabel.text = @"версия 0.5 · вшитые реакции";
+        cell.detailTextLabel.text = @"версия 0.6 · без вылетов";
         cell.selectionStyle = UITableViewCellSelectionStyleNone;
     }
     return cell;

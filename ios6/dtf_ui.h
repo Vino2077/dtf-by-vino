@@ -34,6 +34,8 @@ void DTFGradientCell(UITableViewCell *cell);
 + (UIImage *)cached:(NSString *)key;
 + (void)store:(UIImage *)img forKey:(NSString *)key;
 + (NSData *)fetchUuid:(NSString *)uuid width:(int)width;
+/// Where a cached picture lives on disk, or nil if it has not been fetched.
++ (NSString *)readyPathFor:(NSString *)uuid width:(int)width;
 /// Loads into `view`, from cache when possible; `tag` guards cell reuse.
 + (void)loadUuid:(NSString *)uuid width:(int)width into:(UIImageView *)view;
 @end
