@@ -213,3 +213,19 @@ NSData *DTFPostMultipart(NSString *host, NSString *path, NSDictionary *fields, N
     NSString *ctype = [NSString stringWithFormat:@"multipart/form-data; boundary=%@", boundary];
     return DTFRequest(host, path, @"POST", body, ctype, error);
 }
+
+NSData *DTFPostJsonPart(NSString *host, NSString *path, NSString *partName,
+                        NSData *json, NSString **error)
+{
+    NSString *boundary = @"----dtfios6boundary7a1c";
+    NSMutableData *body = [NSMutableData data];
+    NSString *head = [NSString stringWithFormat:
+        @"--%@\r\nContent-Disposition: form-data; name=\"%@\"; filename=\"entry.json\"\r\n"
+         "Content-Type: application/json\r\n\r\n", boundary, partName];
+    [body appendData:[head dataUsingEncoding:NSUTF8StringEncoding]];
+    [body appendData:json];
+    [body appendData:[[NSString stringWithFormat:@"\r\n--%@--\r\n", boundary]
+                        dataUsingEncoding:NSUTF8StringEncoding]];
+    NSString *ctype = [NSString stringWithFormat:@"multipart/form-data; boundary=%@", boundary];
+    return DTFRequest(host, path, @"POST", body, ctype, error);
+}

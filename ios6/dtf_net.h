@@ -26,3 +26,8 @@ NSData *DTFPostMultipart(NSString *host, NSString *path,
 /// Stored in user defaults; nil when signed out.
 NSString *DTFToken(void);
 void DTFSetToken(NSString *token);
+
+/// POST with a multipart body carrying one JSON part — the shape the editor
+/// endpoint wants (`entry` = the whole post as application/json).
+NSData *DTFPostJsonPart(NSString *host, NSString *path, NSString *partName,
+                        NSData *json, NSString **error);

@@ -58,3 +58,11 @@ NSString *DTFStr(id v);
 NSInteger DTFInt(id v);
 NSDictionary *DTFDict(id v);
 NSArray *DTFArr(id v);
+
+@interface DTFApi (Editor)
+/// Creates a draft and publishes it. Returns the new post id, or 0.
++ (NSInteger)publishTitle:(NSString *)title
+                     text:(NSString *)text
+                subsiteId:(NSInteger)subsiteId
+                    error:(NSString **)error;
+@end

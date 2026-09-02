@@ -285,3 +285,65 @@ static id DTFApiGet(NSString *version, NSString *rest, NSString **error)
 }
 
 @end
+
+@implementation DTFApi (Editor)
+
++ (NSInteger)publishTitle:(NSString *)title
+                     text:(NSString *)text
+                subsiteId:(NSInteger)subsiteId
+                    error:(NSString **)error
+{
+    if (![self isLoggedIn]) { if (error) *error = @"нужен вход в аккаунт"; return 0; }
+
+    /* One text block per non-empty line — the editor stores post bodies as a
+       list of blocks, same as the Android client builds. */
+    NSMutableArray *blocks = [NSMutableArray array];
+    for (NSString *para in [text componentsSeparatedByString:@"\n"]) {
+        NSString *t = [para stringByTrimmingCharactersInSet:
+            [NSCharacterSet whitespaceAndNewlineCharacterSet]];
+        if ([t length] == 0) continue;
+        [blocks addObject:[NSDictionary dictionaryWithObjectsAndKeys:
+            @"text", @"type",
+            [NSDictionary dictionaryWithObject:
+                [NSString stringWithFormat:@"<p>%@</p>", t] forKey:@"text"], @"data",
+            [NSNumber numberWithBool:NO], @"hidden",
+            @"", @"anchor", nil]];
+    }
+    if ([blocks count] == 0) { if (error) *error = @"пустой текст"; return 0; }
+
+    NSDictionary *payload = [NSDictionary dictionaryWithObjectsAndKeys:
+        [NSNumber numberWithInt:0], @"id",
+        title ? title : @"", @"title",
+        [NSNumber numberWithInt:0], @"user_id",
+        [NSNumber numberWithInt:(int)subsiteId], @"subsite_id",
+        [NSNumber numberWithBool:NO], @"is_adult",
+        [NSDictionary dictionaryWithObject:blocks forKey:@"blocks"], @"entry", nil];
+
+    NSData *json = [NSJSONSerialization dataWithJSONObject:payload options:0 error:NULL];
+    if (json == nil) { if (error) *error = @"не собрался запрос"; return 0; }
+
+    NSString *err = nil;
+    NSData *d = DTFPostJsonPart(kApiHost, @"/v2.11/editor", @"entry", json, &err);
+    if (d == nil) { if (error) *error = err ? err : @"нет ответа"; return 0; }
+
+    id root = [NSJSONSerialization JSONObjectWithData:d options:0 error:NULL];
+    NSDictionary *result = DTFDict([DTFDict(root) objectForKey:@"result"]);
+    NSInteger newId = DTFInt([result objectForKey:@"id"]);
+    if (newId == 0) newId = DTFInt([DTFDict([result objectForKey:@"entry"]) objectForKey:@"id"]);
+    if (newId == 0) {
+        id msg = [DTFDict(root) objectForKey:@"message"];
+        if (error) {
+            *error = ([msg isKindOfClass:[NSString class]] && [msg length] > 0)
+                     ? msg : @"черновик не создался";
+        }
+        return 0;
+    }
+
+    NSData *pub = DTFPostForm(kApiHost,
+        [NSString stringWithFormat:@"/v2.11/editor/%d/publish", (int)newId],
+        [NSDictionary dictionary], &err);
+    if (pub == nil && error) *error = @"черновик создан, но не опубликовался";
+    return newId;
+}
+
+@end

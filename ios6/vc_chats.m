@@ -97,7 +97,7 @@
 
     NSDictionary *pic = DTFDict([ch objectForKey:@"pictureData"]);
     NSString *uuid = DTFStr([DTFDict([pic objectForKey:@"data"]) objectForKey:@"uuid"]);
-    cell.imageView.image = nil;
+    cell.imageView.image = DTFPlaceholder(46.0f);
     if ([uuid length] > 0) [DTFImages loadUuid:uuid width:80 into:cell.imageView];
     return cell;
 }

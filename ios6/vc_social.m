@@ -329,7 +329,8 @@ static NSInteger DTFPostIdFromUrl(NSString *url)
 - (NSInteger)tableView:(UITableView *)tv numberOfRowsInSection:(NSInteger)s
 {
     if (s == 0) return 1;                       /* account */
-    return [DTFApi isLoggedIn] ? 3 : 2;         /* bookmarks, settings, (sign out) */
+    /* signed in: compose, bookmarks, settings, sign out */
+    return [DTFApi isLoggedIn] ? 4 : 2;
 }
 
 - (NSString *)tableView:(UITableView *)tv titleForHeaderInSection:(NSInteger)s
@@ -365,8 +366,13 @@ static NSInteger DTFPostIdFromUrl(NSString *url)
         return cell;
     }
 
-    if (ip.row == 0) { cell.textLabel.text = @"Закладки"; }
-    else if (ip.row == 1) { cell.textLabel.text = @"Настройки"; }
+    cell.textLabel.textColor = [UIColor blackColor];
+    /* The compose row only exists when signed in, so everything below it
+       shifts by one. */
+    NSInteger row = [DTFApi isLoggedIn] ? ip.row : ip.row + 1;
+    if (row == 0) { cell.textLabel.text = @"Написать пост"; }
+    else if (row == 1) { cell.textLabel.text = @"Закладки"; }
+    else if (row == 2) { cell.textLabel.text = @"Настройки"; }
     else {
         cell.textLabel.text = @"Выйти из аккаунта";
         cell.textLabel.textColor = [UIColor colorWithRed:0.75f green:0.13f blue:0.13f alpha:1.0f];
@@ -386,11 +392,15 @@ static NSInteger DTFPostIdFromUrl(NSString *url)
         }
         return;
     }
-    if (ip.row == 0) {
+    NSInteger row = [DTFApi isLoggedIn] ? ip.row : ip.row + 1;
+    if (row == 0) {
+        EditorViewController *vc = [[[EditorViewController alloc] init] autorelease];
+        [self.navigationController pushViewController:vc animated:YES];
+    } else if (row == 1) {
         BookmarksViewController *vc = [[[BookmarksViewController alloc]
             initWithStyle:UITableViewStylePlain] autorelease];
         [self.navigationController pushViewController:vc animated:YES];
-    } else if (ip.row == 1) {
+    } else if (row == 2) {
         SettingsViewController *vc = [[[SettingsViewController alloc]
             initWithStyle:UITableViewStyleGrouped] autorelease];
         [self.navigationController pushViewController:vc animated:YES];

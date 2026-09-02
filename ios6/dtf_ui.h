@@ -38,6 +38,9 @@ void DTFGradientCell(UITableViewCell *cell);
 + (void)loadUuid:(NSString *)uuid width:(int)width into:(UIImageView *)view;
 @end
 
+/// A neutral tile so rows reserve space before the real picture lands.
+UIImage *DTFPlaceholder(CGFloat side);
+
 /// base64 for inlining images into HTML (iOS 6 predates the NSData category).
 NSString *DTFBase64(NSData *data);
 

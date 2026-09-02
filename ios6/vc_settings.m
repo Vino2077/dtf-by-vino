@@ -269,3 +269,130 @@ static NSString *const kImagesOn = @"dtf_images_on";
 }
 
 @end
+
+/* ------------------------------------------------------------------ */
+/* Compose a post                                                      */
+/* ------------------------------------------------------------------ */
+
+@interface EditorViewController ()
+@property (nonatomic, retain) UITextField *titleField;
+@property (nonatomic, retain) UITextView *bodyView;
+@property (nonatomic, retain) UILabel *statusLabel;
+@property (nonatomic, retain) UIActivityIndicatorView *spinner;
+@end
+
+@implementation EditorViewController
+@synthesize titleField, bodyView, statusLabel, spinner;
+
+- (void)dealloc
+{
+    [titleField release]; [bodyView release];
+    [statusLabel release]; [spinner release];
+    [super dealloc];
+}
+
+- (void)viewDidLoad
+{
+    [super viewDidLoad];
+    self.title = @"Новый пост";
+    self.view.backgroundColor = DTFPaper();
+
+    CGFloat w = self.view.bounds.size.width;
+
+    self.titleField = [[[UITextField alloc] initWithFrame:
+        CGRectMake(12.0f, 12.0f, w - 24.0f, 34.0f)] autorelease];
+    self.titleField.borderStyle = UITextBorderStyleRoundedRect;
+    self.titleField.placeholder = @"Заголовок";
+    self.titleField.font = [UIFont boldSystemFontOfSize:16.0f];
+    self.titleField.delegate = self;
+    self.titleField.autoresizingMask = UIViewAutoresizingFlexibleWidth;
+    [self.view addSubview:self.titleField];
+
+    self.bodyView = [[[UITextView alloc] initWithFrame:
+        CGRectMake(12.0f, 54.0f, w - 24.0f, 170.0f)] autorelease];
+    self.bodyView.font = [UIFont systemFontOfSize:15.0f];
+    self.bodyView.layer.borderColor = [[UIColor colorWithWhite:0.7f alpha:1.0f] CGColor];
+    self.bodyView.layer.borderWidth = 1.0f;
+    self.bodyView.layer.cornerRadius = 6.0f;
+    self.bodyView.autoresizingMask =
+        UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+    [self.view addSubview:self.bodyView];
+
+    UILabel *hint = [[[UILabel alloc] initWithFrame:
+        CGRectMake(14.0f, 228.0f, w - 28.0f, 32.0f)] autorelease];
+    hint.text = @"Каждая строка станет отдельным абзацем.";
+    hint.font = [UIFont systemFontOfSize:12.0f];
+    hint.numberOfLines = 2;
+    hint.textColor = [UIColor grayColor];
+    hint.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleTopMargin;
+    DTFLetterpress(hint);
+    [self.view addSubview:hint];
+
+    self.statusLabel = [[[UILabel alloc] initWithFrame:
+        CGRectMake(14.0f, 262.0f, w - 28.0f, 48.0f)] autorelease];
+    self.statusLabel.numberOfLines = 3;
+    self.statusLabel.font = [UIFont systemFontOfSize:13.0f];
+    self.statusLabel.textAlignment = UITextAlignmentCenter;
+    self.statusLabel.textColor = [UIColor colorWithRed:0.7f green:0.1f blue:0.1f alpha:1.0f];
+    self.statusLabel.autoresizingMask =
+        UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleTopMargin;
+    DTFLetterpress(self.statusLabel);
+    [self.view addSubview:self.statusLabel];
+
+    self.spinner = [[[UIActivityIndicatorView alloc]
+        initWithActivityIndicatorStyle:UIActivityIndicatorViewStyleGray] autorelease];
+    self.spinner.center = CGPointMake(w / 2.0f, 318.0f);
+    self.spinner.autoresizingMask =
+        UIViewAutoresizingFlexibleLeftMargin | UIViewAutoresizingFlexibleRightMargin;
+    [self.view addSubview:self.spinner];
+
+    self.navigationItem.rightBarButtonItem = [[[UIBarButtonItem alloc]
+        initWithTitle:@"Опубликовать" style:UIBarButtonItemStyleDone
+               target:self action:@selector(publish)] autorelease];
+}
+
+- (BOOL)textFieldShouldReturn:(UITextField *)tf
+{
+    [self.bodyView becomeFirstResponder];
+    return NO;
+}
+
+- (void)publish
+{
+    NSString *title = [self.titleField.text stringByTrimmingCharactersInSet:
+        [NSCharacterSet whitespaceAndNewlineCharacterSet]];
+    NSString *body = self.bodyView.text;
+    if ([body length] == 0) {
+        self.statusLabel.text = @"Нечего публиковать";
+        return;
+    }
+    [self.titleField resignFirstResponder];
+    [self.bodyView resignFirstResponder];
+    self.statusLabel.text = @"";
+    [self.spinner startAnimating];
+
+    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
+        NSDictionary *me = [DTFApi meWithError:NULL];
+        NSInteger sid = DTFInt([me objectForKey:@"id"]);
+        NSString *err = nil;
+        NSInteger newId = sid > 0
+            ? [DTFApi publishTitle:title text:body subsiteId:sid error:&err]
+            : 0;
+        if (sid <= 0 && err == nil) err = @"не удалось определить твой блог";
+
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [self.spinner stopAnimating];
+            if (newId > 0) {
+                [[[[UIAlertView alloc] initWithTitle:@"Опубликовано"
+                                             message:nil delegate:nil
+                                   cancelButtonTitle:@"Ок"
+                                   otherButtonTitles:nil] autorelease] show];
+                [self.navigationController popViewControllerAnimated:YES];
+            } else {
+                self.statusLabel.text = err ? err : @"Не удалось опубликовать";
+            }
+        });
+    });
+}
+
+@end

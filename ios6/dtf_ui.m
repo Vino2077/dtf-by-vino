@@ -63,12 +63,50 @@ void DTFGradientCell(UITableViewCell *cell)
 
 @implementation DTFImages
 
+/* A concurrent queue with a small semaphore instead of one serial queue: a
+   single line got saturated by a screenful of feed thumbnails, and avatars or
+   reaction icons queued behind them never arrived. Three at a time is what
+   this CPU can handle without the UI stuttering. */
 + (dispatch_queue_t)queue
 {
     static dispatch_queue_t q;
     static dispatch_once_t once;
-    dispatch_once(&once, ^{ q = dispatch_queue_create("ru.vino.dtf.images", NULL); });
+    dispatch_once(&once, ^{
+        q = dispatch_queue_create("ru.vino.dtf.images", DISPATCH_QUEUE_CONCURRENT);
+    });
     return q;
+}
+
++ (dispatch_semaphore_t)slots
+{
+    static dispatch_semaphore_t s;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{ s = dispatch_semaphore_create(3); });
+    return s;
+}
+
+/* Keys currently being fetched, so a cell scrolling in and out again does not
+   queue the same picture over and over. */
++ (NSMutableSet *)inFlight
+{
+    static NSMutableSet *s;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{ s = [[NSMutableSet alloc] init]; });
+    return s;
+}
+
++ (BOOL)beginFetch:(NSString *)key
+{
+    @synchronized ([self inFlight]) {
+        if ([[self inFlight] containsObject:key]) return NO;
+        [[self inFlight] addObject:key];
+        return YES;
+    }
+}
+
++ (void)endFetch:(NSString *)key
+{
+    @synchronized ([self inFlight]) { [[self inFlight] removeObject:key]; }
 }
 
 + (NSMutableDictionary *)store
@@ -141,18 +179,59 @@ void DTFGradientCell(UITableViewCell *cell)
     NSInteger stamp = ++target.tag;
 
     dispatch_async([self queue], ^{
+        dispatch_semaphore_wait([self slots], DISPATCH_TIME_FOREVER);
+
         UIImage *img = [self cached:key];
         if (img == nil) {
-            NSData *d = [self fetchUuid:key width:width];
-            img = [d length] > 0 ? [UIImage imageWithData:d] : nil;
-            if (img != nil) [self store:img forKey:key];
+            if ([self beginFetch:key]) {
+                NSData *d = [self fetchUuid:key width:width];
+                img = [d length] > 0 ? [UIImage imageWithData:d] : nil;
+                if (img != nil) [self store:img forKey:key];
+                [self endFetch:key];
+            } else {
+                /* Someone else is already fetching it; take the cached copy
+                   when it lands rather than opening a second connection. */
+                for (int i = 0; i < 40 && img == nil; i++) {
+                    usleep(150000);
+                    img = [self cached:key];
+                }
+            }
         }
+        dispatch_semaphore_signal([self slots]);
         if (img == nil) return;
+
         dispatch_async(dispatch_get_main_queue(), ^{
-            /* Cell may have been reused for another row meanwhile. */
-            if (target.tag == stamp) target.image = img;
+            /* The cell may have been reused for another row meanwhile. */
+            if (target.tag != stamp) return;
+            target.image = img;
+            /* A table cell lays its image view out at zero size when there was
+               no image at layout time, so ask for another pass. */
+            [target setNeedsLayout];
+            [target.superview setNeedsLayout];
         });
     });
+}
+
+/* A neutral tile so rows reserve space before the picture arrives. */
+UIImage *DTFPlaceholder(CGFloat side)
+{
+    static NSMutableDictionary *cache = nil;
+    if (cache == nil) cache = [[NSMutableDictionary alloc] init];
+    NSString *key = [NSString stringWithFormat:@"%d", (int)side];
+    UIImage *img = [cache objectForKey:key];
+    if (img != nil) return img;
+
+    CGSize size = CGSizeMake(side, side);
+    UIGraphicsBeginImageContextWithOptions(size, NO, 0.0f);
+    CGContextRef ctx = UIGraphicsGetCurrentContext();
+    CGContextSetFillColorWithColor(ctx,
+        [[UIColor colorWithWhite:0.87f alpha:1.0f] CGColor]);
+    CGContextFillRect(ctx, CGRectMake(0.0f, 0.0f, side, side));
+    img = UIGraphicsGetImageFromCurrentImageContext();
+    UIGraphicsEndImageContext();
+
+    if (img != nil) [cache setObject:img forKey:key];
+    return img;
 }
 
 @end
@@ -215,6 +294,8 @@ NSString *DTFHtmlHead(void)
             ".body{font-size:14px;margin-top:3px}"
             ".note{color:#999;font-size:12px;font-style:italic}"
             ".pill{display:inline-block;background:#e8e8e8;border:1px solid #ccc;"
+            ".rx{width:19px;height:19px;display:inline;vertical-align:-4px;margin:0;"
+            "border:0;box-shadow:none;border-radius:3px}"
             "border-radius:10px;padding:1px 8px;font-size:12px;color:#555;margin-right:5px}"
             "</style></head><body>";
 }

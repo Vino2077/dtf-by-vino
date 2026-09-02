@@ -178,13 +178,17 @@ NSArray *DTFPostsFromItems(NSArray *items)
     [sub appendFormat:@"  ♥ %d   ✎ %d", (int)p.reactions, (int)p.comments];
     cell.detailTextLabel.text = sub;
 
-    cell.imageView.image = [UIImage imageNamed:@"placeholder"];
-    if ([p.coverUuid length] > 0) {
-        [DTFImages loadUuid:p.coverUuid width:120 into:cell.imageView];
-    } else if ([p.avatarUuid length] > 0) {
-        [DTFImages loadUuid:p.avatarUuid width:80 into:cell.imageView];
-    } else {
-        cell.imageView.image = nil;
+    cell.imageView.image = DTFPlaceholder(56.0f);
+    /* Pictures can be switched off in settings — a real speed-up here. */
+    id imagesPref = [[NSUserDefaults standardUserDefaults] objectForKey:@"dtf_images_on"];
+    BOOL showImages = imagesPref == nil
+        || [[NSUserDefaults standardUserDefaults] boolForKey:@"dtf_images_on"];
+    if (showImages) {
+        if ([p.coverUuid length] > 0) {
+            [DTFImages loadUuid:p.coverUuid width:120 into:cell.imageView];
+        } else if ([p.avatarUuid length] > 0) {
+            [DTFImages loadUuid:p.avatarUuid width:80 into:cell.imageView];
+        }
     }
 
     if (self.canPaginate && !self.noMore && !self.loading &&

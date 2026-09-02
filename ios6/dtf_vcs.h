@@ -82,3 +82,7 @@ NSString *DTFAgo(NSTimeInterval unixTime);
 
 @interface LoginViewController : UIViewController <UITextFieldDelegate>
 @end
+
+/// Compose and publish a text post.
+@interface EditorViewController : UIViewController <UITextFieldDelegate>
+@end

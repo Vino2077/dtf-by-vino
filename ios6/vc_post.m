@@ -3,7 +3,7 @@
 #import "dtf_ui.h"
 #import "dtf_net.h"
 
-/* The reaction ids DTF shows first, with the CDN uuid of each picture.
+/* The reaction ids DTF offers first, with the CDN uuid of each picture.
    Carried over from the Android client registry. */
 static NSArray *DTFReactionIds(void)
 {
@@ -22,7 +22,15 @@ static NSString *DTFReactionUuid(NSInteger rid)
             @"0f3a998f-1441-5f0f-8a5b-549bbf170c65", @"5",
             @"2d62d1ab-8ec6-5f17-81f8-6f6f3312d283", @"6",
             @"ec72865d-ec4e-5299-b763-628cfd2539af", @"7",
-            @"f8f6d0eb-8e72-50b1-af8e-c5a863a0c3b0", @"8", nil];
+            @"f8f6d0eb-8e72-50b1-af8e-c5a863a0c3b0", @"8",
+            @"080e8489-f354-52f3-b495-d3901aa329b3", @"9",
+            @"362a7194-57ee-5417-835e-bdc54d5394d4", @"10",
+            @"b09f4923-5520-5ef9-b86d-668027a98d08", @"11",
+            @"5862140b-90b1-5c28-b0f0-8bab45beb587", @"12",
+            @"9368c0d2-e9e3-55c8-b633-c44c82095226", @"13",
+            @"6aa490dc-b161-57ac-ad47-1f6a4946b513", @"14",
+            @"898d07e7-06ea-5ff7-9ad6-8f74eb4e6f04", @"15",
+            @"825e5ec2-bd20-5d7b-a681-f0fd66de0c21", @"16", nil];
     }
     return [map objectForKey:[NSString stringWithFormat:@"%d", (int)rid]];
 }
@@ -35,11 +43,14 @@ static NSString *DTFReactionUuid(NSInteger rid)
 @property (nonatomic, retain) NSMutableDictionary *inlineImages;
 @property (nonatomic, retain) UIView *reactionBar;
 @property (nonatomic, assign) BOOL favorited;
+@property (nonatomic, assign) NSInteger replyTo;      /* comment being answered */
+@property (nonatomic, assign) NSInteger reactTarget;  /* comment being reacted to */
 @end
 
 @implementation PostViewController
 @synthesize postId, headerTitle;
 @synthesize web, spinner, postData, commentData, inlineImages, reactionBar, favorited;
+@synthesize replyTo, reactTarget;
 
 - (void)dealloc
 {
@@ -71,12 +82,16 @@ static NSString *DTFReactionUuid(NSInteger rid)
     [self.view addSubview:self.spinner];
     [self.spinner startAnimating];
 
+    self.navigationItem.rightBarButtonItem = [[[UIBarButtonItem alloc]
+        initWithTitle:@"Блог" style:UIBarButtonItemStyleBordered
+               target:self action:@selector(openBlog)] autorelease];
+
     UIBarButtonItem *space = [[[UIBarButtonItem alloc]
         initWithBarButtonSystemItem:UIBarButtonSystemItemFlexibleSpace
                              target:nil action:nil] autorelease];
     UIBarButtonItem *react = [[[UIBarButtonItem alloc]
         initWithTitle:@"♥ Реакция" style:UIBarButtonItemStyleBordered
-               target:self action:@selector(showReactions)] autorelease];
+               target:self action:@selector(showReactionsForPost)] autorelease];
     UIBarButtonItem *comment = [[[UIBarButtonItem alloc]
         initWithTitle:@"✎ Комментарий" style:UIBarButtonItemStyleBordered
                target:self action:@selector(writeComment)] autorelease];
@@ -84,7 +99,6 @@ static NSString *DTFReactionUuid(NSInteger rid)
         initWithBarButtonSystemItem:UIBarButtonSystemItemBookmarks
                              target:self action:@selector(toggleFavorite)] autorelease];
     self.toolbarItems = [NSArray arrayWithObjects:react, space, comment, space, fav, nil];
-    [self.navigationController setToolbarHidden:NO animated:NO];
     DTFStyleToolbar(self.navigationController.toolbar);
 
     [self loadEverything];
@@ -102,13 +116,27 @@ static NSString *DTFReactionUuid(NSInteger rid)
     [self.navigationController setToolbarHidden:YES animated:animated];
 }
 
-/* The web view has no working network of its own, so links go to Safari. */
+/* The web view has no working network of its own, so real links go to Safari.
+   The private schemes below are how the article talks back to the app. */
 - (BOOL)webView:(UIWebView *)wv
         shouldStartLoadWithRequest:(NSURLRequest *)request
         navigationType:(UIWebViewNavigationType)type
 {
+    NSURL *url = [request URL];
+    NSString *scheme = [url scheme];
+
+    if ([scheme isEqualToString:@"dtfreply"]) {
+        self.replyTo = [[url resourceSpecifier] integerValue];
+        [self writeComment];
+        return NO;
+    }
+    if ([scheme isEqualToString:@"dtfreact"]) {
+        self.reactTarget = [[url resourceSpecifier] integerValue];
+        [self showReactions];
+        return NO;
+    }
     if (type == UIWebViewNavigationTypeLinkClicked) {
-        [[UIApplication sharedApplication] openURL:[request URL]];
+        [[UIApplication sharedApplication] openURL:url];
         return NO;
     }
     return YES;
@@ -116,17 +144,45 @@ static NSString *DTFReactionUuid(NSInteger rid)
 
 /* ---------------- rendering ---------------- */
 
-- (NSString *)imgTagFor:(NSString *)uuid pending:(NSMutableArray *)pending
+- (NSString *)imgTagFor:(NSString *)uuid
+                pending:(NSMutableDictionary *)pending
+                  width:(int)width
+                  class:(NSString *)cls
 {
     NSString *b64 = [self.inlineImages objectForKey:uuid];
     if (b64 != nil) {
-        return [NSString stringWithFormat:@"<img src='data:image/jpeg;base64,%@'>", b64];
+        return [NSString stringWithFormat:@"<img class='%@' src='data:image/jpeg;base64,%@'>",
+                cls ? cls : @"", b64];
     }
-    if (![pending containsObject:uuid]) [pending addObject:uuid];
-    return @"<div class='note'>картинка загружается…</div>";
+    if ([pending objectForKey:uuid] == nil) {
+        [pending setObject:[NSNumber numberWithInt:width] forKey:uuid];
+    }
+    return [cls isEqualToString:@"rx"] ? @"" : @"<div class='note'>картинка загружается…</div>";
 }
 
-- (NSString *)bodyHtmlPending:(NSMutableArray *)pending
+- (NSString *)reactionsHtmlPending:(NSMutableDictionary *)pending
+{
+    NSDictionary *reactions = DTFDict([self.postData objectForKey:@"reactions"]);
+    NSArray *counters = DTFArr([reactions objectForKey:@"counters"]);
+    if ([counters count] == 0) return @"";
+
+    NSMutableString *h = [NSMutableString stringWithString:@"<div style='margin-top:14px'>"];
+    for (id c in counters) {
+        NSDictionary *cd = DTFDict(c);
+        NSInteger n = DTFInt([cd objectForKey:@"count"]);
+        if (n <= 0) continue;
+        NSInteger rid = DTFInt([cd objectForKey:@"id"]);
+        NSString *uuid = DTFReactionUuid(rid);
+        NSString *pic = [uuid length] > 0
+            ? [self imgTagFor:uuid pending:pending width:48 class:@"rx"]
+            : [NSString stringWithFormat:@"#%d", (int)rid];
+        [h appendFormat:@"<span class='pill'>%@ %d</span>", pic, (int)n];
+    }
+    [h appendString:@"</div>"];
+    return h;
+}
+
+- (NSString *)bodyHtmlPending:(NSMutableDictionary *)pending
 {
     NSDictionary *post = self.postData;
     NSMutableString *h = [NSMutableString string];
@@ -184,12 +240,13 @@ static NSString *DTFReactionUuid(NSInteger rid)
                 NSString *uuid = DTFStr([idata objectForKey:@"uuid"]);
                 if ([uuid length] == 0) continue;
                 NSString *kind = DTFStr([idata objectForKey:@"type"]);
+
+                [h appendString:[self imgTagFor:uuid pending:pending width:300 class:nil]];
                 if ([kind isEqualToString:@"gif"] || [kind isEqualToString:@"mp4"]) {
-                    /* Animated media would need a player; show the frame only. */
-                    [h appendString:[self imgTagFor:uuid pending:pending]];
-                    [h appendString:@"<div class='note'>анимация — только первый кадр</div>"];
-                } else {
-                    [h appendString:[self imgTagFor:uuid pending:pending]];
+                    /* Animation needs a player this screen does not have. */
+                    [h appendFormat:@"<div class='note'>анимация — "
+                        "<a href='https://leonardo.osnova.io/%@/-/format/mp4/'>открыть</a></div>",
+                        uuid];
                 }
                 NSString *cap = DTFStr([itd objectForKey:@"title"]);
                 if ([cap length] > 0) [h appendFormat:@"<div class='meta'>%@</div>", cap];
@@ -241,24 +298,11 @@ static NSString *DTFReactionUuid(NSInteger rid)
         }
     }
 
-    /* Reaction tallies as pills. */
-    NSDictionary *reactions = DTFDict([post objectForKey:@"reactions"]);
-    NSArray *counters = DTFArr([reactions objectForKey:@"counters"]);
-    if ([counters count] > 0) {
-        [h appendString:@"<div style='margin-top:14px'>"];
-        for (id c in counters) {
-            NSDictionary *cd = DTFDict(c);
-            NSInteger n = DTFInt([cd objectForKey:@"count"]);
-            if (n <= 0) continue;
-            [h appendFormat:@"<span class='pill'>#%d · %d</span>",
-                (int)DTFInt([cd objectForKey:@"id"]), (int)n];
-        }
-        [h appendString:@"</div>"];
-    }
+    [h appendString:[self reactionsHtmlPending:pending]];
     return h;
 }
 
-- (NSString *)commentsHtml
+- (NSString *)commentsHtmlPending:(NSMutableDictionary *)pending
 {
     if ([self.commentData count] == 0) {
         return @"<h2>Комментарии</h2><div class='note'>Пока пусто</div>";
@@ -269,32 +313,41 @@ static NSString *DTFReactionUuid(NSInteger rid)
         NSDictionary *cd = DTFDict(c);
         if (cd == nil) continue;
         NSString *text = DTFStr([cd objectForKey:@"text"]);
-        BOOL removed = [[cd objectForKey:@"isRemoved"] boolValue];
-        if (removed) text = @"<i>комментарий удалён</i>";
+        if ([[cd objectForKey:@"isRemoved"] boolValue]) text = @"<i>комментарий удалён</i>";
         if ([text length] == 0) continue;
 
-        NSString *who = DTFStr([DTFDict([cd objectForKey:@"author"]) objectForKey:@"name"]);
+        NSInteger cid = DTFInt([cd objectForKey:@"id"]);
+        NSDictionary *au = DTFDict([cd objectForKey:@"author"]);
+        NSString *who = DTFStr([au objectForKey:@"name"]);
+        NSString *avatar = DTFStr([DTFDict([DTFDict([au objectForKey:@"avatar"])
+                                            objectForKey:@"data"]) objectForKey:@"uuid"]);
         NSInteger level = DTFInt([cd objectForKey:@"level"]);
         if (level > 4) level = 4;
         NSInteger likes = DTFInt([DTFDict([cd objectForKey:@"likes"]) objectForKey:@"summ"]);
         NSString *ago = DTFAgo((NSTimeInterval)DTFInt([cd objectForKey:@"date"]));
 
+        NSString *pic = [avatar length] > 0
+            ? [self imgTagFor:avatar pending:pending width:48 class:@"rx"] : @"";
+
         [h appendFormat:@"<div class='card' style='margin-left:%dpx'>"
-                         "<div class='who'>%@ <span class='meta'>%@%@</span></div>"
-                         "<div class='body'>%@</div></div>",
-            (int)(level * 11),
+                         "<div class='who'>%@ %@ <span class='meta'>%@%@</span></div>"
+                         "<div class='body'>%@</div>"
+                         "<div class='meta'><a href='dtfreply:%d'>Ответить</a>"
+                         " &nbsp; <a href='dtfreact:%d'>♥ Реакция</a></div></div>",
+            (int)(level * 11), pic,
             who ? who : @"?",
             ago,
             likes != 0 ? [NSString stringWithFormat:@" · %+d", (int)likes] : @"",
-            text];
+            text, (int)cid, (int)cid];
     }
     return h;
 }
 
 - (void)renderFull
 {
+    NSMutableDictionary *ignore = [NSMutableDictionary dictionary];
     NSString *page = [NSString stringWithFormat:@"%@%@%@</body></html>",
-        DTFHtmlHead(), [self bodyHtmlPending:[NSMutableArray array]], [self commentsHtml]];
+        DTFHtmlHead(), [self bodyHtmlPending:ignore], [self commentsHtmlPending:ignore]];
     [self.web loadHTMLString:page baseURL:nil];
 }
 
@@ -317,7 +370,7 @@ static NSString *DTFReactionUuid(NSInteger rid)
             return;
         }
 
-        NSMutableArray *pending = [NSMutableArray array];
+        NSMutableDictionary *pending = [NSMutableDictionary dictionary];
         dispatch_sync(dispatch_get_main_queue(), ^{
             self.postData = post;
             self.favorited = [[post objectForKey:@"isFavorited"] boolValue];
@@ -329,19 +382,27 @@ static NSString *DTFReactionUuid(NSInteger rid)
         });
 
         NSArray *comments = [DTFApi comments:self.postId error:NULL];
-        dispatch_async(dispatch_get_main_queue(), ^{ self.commentData = comments; });
+        __block NSMutableDictionary *withComments = nil;
+        dispatch_sync(dispatch_get_main_queue(), ^{
+            self.commentData = comments;
+            withComments = [NSMutableDictionary dictionaryWithDictionary:pending];
+            /* Collect the avatars the comments need, without rendering yet. */
+            [self commentsHtmlPending:withComments];
+        });
 
-        /* Pictures last, one at a time, capped so a photo essay cannot stall
-           the screen for minutes on this hardware. */
-        NSUInteger limit = [pending count] < 10 ? [pending count] : 10;
-        for (NSUInteger i = 0; i < limit; i++) {
-            NSString *uuid = [pending objectAtIndex:i];
-            NSData *img = [DTFImages fetchUuid:uuid width:300];
+        /* Pictures last, capped so a photo essay cannot stall the screen for
+           minutes on this hardware. */
+        NSUInteger done = 0;
+        for (NSString *uuid in withComments) {
+            if (done >= 24) break;
+            int w = [[withComments objectForKey:uuid] intValue];
+            NSData *img = [DTFImages fetchUuid:uuid width:w];
             if ([img length] == 0) continue;
             NSString *b64 = DTFBase64(img);
             dispatch_async(dispatch_get_main_queue(), ^{
                 [self.inlineImages setObject:b64 forKey:uuid];
             });
+            done++;
         }
         dispatch_async(dispatch_get_main_queue(), ^{ [self renderFull]; });
     });
@@ -358,6 +419,26 @@ static NSString *DTFReactionUuid(NSInteger rid)
                        otherButtonTitles:nil] autorelease] show];
 }
 
+- (void)openBlog
+{
+    NSDictionary *sub = DTFDict([self.postData objectForKey:@"subsite"]);
+    if (sub == nil) sub = DTFDict([self.postData objectForKey:@"author"]);
+    NSInteger sid = DTFInt([sub objectForKey:@"id"]);
+    if (sid <= 0) return;
+
+    SubsiteViewController *vc = [[[SubsiteViewController alloc]
+        initWithStyle:UITableViewStylePlain] autorelease];
+    vc.subsiteId = sid;
+    vc.subsiteName = DTFStr([sub objectForKey:@"name"]);
+    [self.navigationController pushViewController:vc animated:YES];
+}
+
+- (void)showReactionsForPost
+{
+    self.reactTarget = 0;
+    [self showReactions];
+}
+
 - (void)showReactions
 {
     if (![DTFApi isLoggedIn]) { [self needLogin]; return; }
@@ -365,8 +446,8 @@ static NSString *DTFReactionUuid(NSInteger rid)
 
     CGFloat w = self.view.bounds.size.width;
     UIView *bar = [[[UIView alloc] initWithFrame:
-        CGRectMake(0.0f, self.view.bounds.size.height - 60.0f, w, 60.0f)] autorelease];
-    bar.backgroundColor = [UIColor colorWithWhite:0.16f alpha:0.92f];
+        CGRectMake(0.0f, self.view.bounds.size.height - 62.0f, w, 62.0f)] autorelease];
+    bar.backgroundColor = [UIColor colorWithWhite:0.16f alpha:0.94f];
     bar.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleTopMargin;
 
     NSArray *ids = DTFReactionIds();
@@ -374,22 +455,30 @@ static NSString *DTFReactionUuid(NSInteger rid)
     for (NSUInteger i = 0; i < [ids count]; i++) {
         NSInteger rid = [[ids objectAtIndex:i] integerValue];
         UIButton *b = [UIButton buttonWithType:UIButtonTypeCustom];
-        b.frame = CGRectMake((CGFloat)i * step + 4.0f, 8.0f, step - 8.0f, 44.0f);
+        b.frame = CGRectMake((CGFloat)i * step, 6.0f, step, 50.0f);
         b.tag = rid;
-        [b setTitle:[NSString stringWithFormat:@"%d", (int)rid] forState:UIControlStateNormal];
-        b.titleLabel.font = [UIFont boldSystemFontOfSize:13.0f];
         [b addTarget:self action:@selector(pickReaction:)
             forControlEvents:UIControlEventTouchUpInside];
-        [bar addSubview:b];
 
         UIImageView *iv = [[[UIImageView alloc] initWithFrame:
-            CGRectMake(b.frame.origin.x + (b.frame.size.width - 32.0f) / 2.0f,
-                       12.0f, 32.0f, 32.0f)] autorelease];
+            CGRectMake((step - 34.0f) / 2.0f, 4.0f, 34.0f, 34.0f)] autorelease];
         iv.contentMode = UIViewContentModeScaleAspectFit;
         iv.userInteractionEnabled = NO;
-        [bar addSubview:iv];
+        iv.image = DTFPlaceholder(34.0f);
+        [b addSubview:iv];
         [DTFImages loadUuid:DTFReactionUuid(rid) width:64 into:iv];
+
+        [bar addSubview:b];
     }
+
+    UILabel *hint = [[[UILabel alloc] initWithFrame:
+        CGRectMake(0.0f, 44.0f, w, 14.0f)] autorelease];
+    hint.text = self.reactTarget > 0 ? @"реакция на комментарий" : @"реакция на пост";
+    hint.font = [UIFont systemFontOfSize:10.0f];
+    hint.textColor = [UIColor lightGrayColor];
+    hint.backgroundColor = [UIColor clearColor];
+    hint.textAlignment = UITextAlignmentCenter;
+    [bar addSubview:hint];
 
     self.reactionBar = bar;
     [self.view addSubview:bar];
@@ -404,10 +493,15 @@ static NSString *DTFReactionUuid(NSInteger rid)
 - (void)pickReaction:(UIButton *)sender
 {
     NSInteger rid = sender.tag;
+    NSInteger target = self.reactTarget;
     [self hideReactions];
+
     dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
-        BOOL ok = [DTFApi react:self.postId isComment:NO reaction:rid];
+        BOOL ok = [DTFApi react:(target > 0 ? target : self.postId)
+                      isComment:(target > 0)
+                       reaction:rid];
         dispatch_async(dispatch_get_main_queue(), ^{
+            self.reactTarget = 0;
             [[[[UIAlertView alloc]
                 initWithTitle:ok ? @"Готово" : @"Не вышло"
                       message:ok ? @"Реакция отправлена" : @"Реакция не отправилась"
@@ -425,7 +519,7 @@ static NSString *DTFReactionUuid(NSInteger rid)
         dispatch_async(dispatch_get_main_queue(), ^{
             if (ok) self.favorited = add;
             [[[[UIAlertView alloc]
-                initWithTitle:ok ? (add ? @"В закладках" : @"Убрано") : @"Не вышло"
+                initWithTitle:ok ? (add ? @"В закладках" : @"Убрано из закладок") : @"Не вышло"
                       message:nil delegate:nil
                 cancelButtonTitle:@"Ок" otherButtonTitles:nil] autorelease] show];
         });
@@ -435,23 +529,26 @@ static NSString *DTFReactionUuid(NSInteger rid)
 - (void)writeComment
 {
     if (![DTFApi isLoggedIn]) { [self needLogin]; return; }
-    UIAlertView *a = [[[UIAlertView alloc] initWithTitle:@"Комментарий"
-                                                 message:nil
-                                                delegate:self
-                                       cancelButtonTitle:@"Отмена"
-                                       otherButtonTitles:@"Отправить", nil] autorelease];
+    UIAlertView *a = [[[UIAlertView alloc]
+        initWithTitle:self.replyTo > 0 ? @"Ответ" : @"Комментарий"
+              message:nil delegate:self
+    cancelButtonTitle:@"Отмена" otherButtonTitles:@"Отправить", nil] autorelease];
     a.alertViewStyle = UIAlertViewStylePlainTextInput;
     [a show];
 }
 
 - (void)alertView:(UIAlertView *)alertView clickedButtonAtIndex:(NSInteger)index
 {
-    if (index != 1 || alertView.alertViewStyle != UIAlertViewStylePlainTextInput) return;
+    if (alertView.alertViewStyle != UIAlertViewStylePlainTextInput) return;
+    if (index != 1) { self.replyTo = 0; return; }
+
     NSString *text = [[alertView textFieldAtIndex:0] text];
+    NSInteger reply = self.replyTo;
+    self.replyTo = 0;
     if ([text length] == 0) return;
 
     dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
-        BOOL ok = [DTFApi addComment:self.postId text:text replyTo:0];
+        BOOL ok = [DTFApi addComment:self.postId text:text replyTo:reply];
         NSArray *fresh = ok ? [DTFApi comments:self.postId error:NULL] : nil;
         dispatch_async(dispatch_get_main_queue(), ^{
             if (ok && fresh != nil) {
