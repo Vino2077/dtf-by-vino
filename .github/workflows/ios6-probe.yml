@@ -33,38 +33,23 @@ jobs:
           python3 -c "d=open('ca_bundle.pem','rb').read(); open('ca_bundle.h','w').write('static const char CA_BUNDLE_PEM[] = {'+','.join(str(b) for b in d)+',0};')"
           wc -c ca_bundle.h
 
-      - name: Patch SDK (libSystem re-exports a liblaunch the SDK omits)
-        run: |
-          SDK=$(ls -d $HOME/sdks/iPhoneOS*.sdk | sort -V | head -1)
-          python3 - <<'PY'
-          import os, glob
-          sdk = sorted(glob.glob(os.path.expanduser('~/sdks/iPhoneOS*.sdk')))[0]
-          path = os.path.join(sdk, 'usr/lib/system/liblaunch.tbd')
-          tbd = [
-            '--- !tapi-tbd-v3',
-            'archs:           [ armv7, armv7s, arm64 ]',
-            'uuids:           []',
-            'platform:        ios',
-            'install-name:    /usr/lib/system/liblaunch.dylib',
-            'current-version: 1.0.0',
-            'compatibility-version: 1.0.0',
-            'objc-constraint: none',
-            'exports:',
-            '  - archs:           [ armv7, armv7s, arm64 ]',
-            '    symbols:         [ ]',
-            '...',
-            '',
-          ]
-          open(path, 'w').write(chr(10).join(tbd))
-          print('stub written to', path)
-          PY
-
       - name: Build for armv7 / iOS 6
         working-directory: ios6
         run: |
           set -x
           CLANG=$(find $HOME/toolchain -name 'clang' | head -1)
           SDK=$(ls -d $HOME/sdks/iPhoneOS*.sdk | sort -V | head -1)
+
+          # Which SDKs even ship liblaunch? (libSystem re-exports it.)
+          ls $HOME/sdks/*/usr/lib/system/liblaunch.* 2>/dev/null || echo "no SDK ships liblaunch"
+
+          # Build an empty stub dylib carrying the expected install name, so the
+          # linker can satisfy libSystem's re-export without the real library.
+          if [ ! -f "$SDK/usr/lib/system/liblaunch.dylib" ]; then
+            echo "static int stub_unused;" > /tmp/stub.c
+            "$CLANG" -target armv7-apple-ios6.0 -isysroot "$SDK" -arch armv7               -miphoneos-version-min=6.0 -nostdlib -dynamiclib               -Wl,-install_name,/usr/lib/system/liblaunch.dylib               /tmp/stub.c -o "$SDK/usr/lib/system/liblaunch.dylib"
+            ls -la "$SDK/usr/lib/system/liblaunch.dylib"
+          fi
           "$CLANG" \
             -target armv7-apple-ios6.0 \
             -isysroot "$SDK" \
