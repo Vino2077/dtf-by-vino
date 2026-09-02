@@ -41,6 +41,28 @@ jobs:
           python3 -c "d=open('ca_bundle.pem','rb').read(); open('ca_bundle.h','w').write('static const char CA_BUNDLE_PEM[] = {'+','.join(str(b) for b in d)+',0};')"
           wc -c ca_bundle.h
 
+      - name: Patch SDK (add missing liblaunch stub)
+        run: |
+          SDK=$(ls -d $HOME/sdks/iPhoneOS*.sdk | sort -V | head -1)
+          echo "--- existing tbd format (libcache) ---"
+          head -12 "$SDK/usr/lib/system/libcache.tbd"
+          echo "--- creating liblaunch stub ---"
+          cat > "$SDK/usr/lib/system/liblaunch.tbd" <<'TBD'
+--- !tapi-tbd-v3
+archs:           [ armv7, armv7s, arm64 ]
+uuids:           []
+platform:        ios
+install-name:    /usr/lib/system/liblaunch.dylib
+current-version: 1.0.0
+compatibility-version: 1.0.0
+objc-constraint: none
+exports:
+  - archs:           [ armv7, armv7s, arm64 ]
+    symbols:         [ ]
+...
+TBD
+          ls -la "$SDK/usr/lib/system/liblaunch.tbd"
+
       - name: Build for armv7 / iOS 6
         working-directory: ios6
         run: |
