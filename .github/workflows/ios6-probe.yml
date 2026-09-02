@@ -50,6 +50,7 @@ jobs:
           SDK=$(ls -d $HOME/sdks/iPhoneOS*.sdk | sort -V | head -1)
           echo "clang: $CLANG"
           echo "sdk:   $SDK"
+          ls $SDK/usr/lib/system/ | head -30
           "$CLANG" --version
 
           # mbedTLS is compiled straight in — no ar/ranlib needed on Linux.
@@ -58,7 +59,7 @@ jobs:
             -isysroot "$SDK" \
             -miphoneos-version-min=6.0 \
             -arch armv7 \
-            -O2 -fno-strict-aliasing -DMBEDTLS_PLATFORM_MS_TIME_ALT \
+            -O2 -fno-strict-aliasing -DMBEDTLS_PLATFORM_MS_TIME_ALT \n            -Wl,-no_implicit_dylibs \
             -I "$HOME/mbedtls/include" -I . \
             tlstest.c $HOME/mbedtls/library/*.c \
             -o dtf-probe
