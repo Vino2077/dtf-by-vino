@@ -36,13 +36,8 @@ jobs:
       - name: Embed CA roots into a header
         working-directory: ios6
         run: |
-          {
-            echo '/* generated from ca_bundle.pem */'
-            echo 'static const char CA_BUNDLE_PEM[] ='
-            sed -e 's/\/\\/g' -e 's/"/\\"/g' -e 's/^/"/' -e 's/$/\n"/' ca_bundle.pem
-            echo ';'
-          } > ca_bundle.h
-          head -3 ca_bundle.h; echo '...'; wc -l ca_bundle.h
+          python3 -c "d=open('ca_bundle.pem','rb').read(); open('ca_bundle.h','w').write('static const char CA_BUNDLE_PEM[] = {'+','.join(str(b) for b in d)+',0};')"
+          wc -c ca_bundle.h
 
       - name: Build for armv7 / iOS 6
         working-directory: ios6
