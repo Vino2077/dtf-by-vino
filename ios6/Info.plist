@@ -22,6 +22,20 @@
     <string>1</string>
     <key>CFBundleSignature</key>
     <string>????</string>
+    <key>CFBundleSupportedPlatforms</key>
+    <array>
+        <string>iPhoneOS</string>
+    </array>
+    <key>DTPlatformName</key>
+    <string>iphoneos</string>
+    <key>DTSDKName</key>
+    <string>iphoneos6.1</string>
+    <key>UIRequiredDeviceCapabilities</key>
+    <array>
+        <string>armv7</string>
+    </array>
+    <key>UIPrerenderedIcon</key>
+    <false/>
     <key>LSRequiresIPhoneOS</key>
     <true/>
     <key>MinimumOSVersion</key>

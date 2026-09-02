@@ -99,7 +99,25 @@ jobs:
           chmod +x /tmp/ldid
           /tmp/ldid -S Payload/DTF.app/DTF
 
-          zip -qr DTF-ios6.ipa Payload
+          # Some installers expect the App Store metadata file to be present.
+          cat > iTunesMetadata.plist <<'PL'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+              <key>artistName</key><string>Vino</string>
+              <key>bundleId</key><string>ru.vino.dtf6</string>
+              <key>bundleVersion</key><string>1</string>
+              <key>itemName</key><string>DTF</string>
+              <key>kind</key><string>software</string>
+              <key>playlistName</key><string>DTF</string>
+              <key>softwareVersionBundleId</key><string>ru.vino.dtf6</string>
+          </dict>
+          </plist>
+          PL
+          sed -i 's/^          //' iTunesMetadata.plist
+
+          zip -qr DTF-ios6.ipa Payload iTunesMetadata.plist
           ls -la DTF-ios6.ipa
           unzip -l DTF-ios6.ipa
 
@@ -107,3 +125,10 @@ jobs:
         with:
           name: DTF-ios6-ipa
           path: ios6/DTF-ios6.ipa
+
+      # Raw bundle, for installing by hand into /Applications on a jailbroken
+      # device when the normal installer refuses the package.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: DTF-ios6-app-folder
+          path: ios6/Payload/DTF.app/*
