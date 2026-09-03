@@ -41,7 +41,7 @@ static NSString *DTFReactionStyle(NSSet *ids)
     for (NSNumber *n in ids) {
         NSString *b64 = DTFReactionBase64([n integerValue]);
         if (b64 == nil) continue;
-        [css appendFormat:@".r%d{background-image:url(data:image/png;base64,%@)}",
+        [css appendFormat:@".r%d{background-image:url(\"data:image/png;base64,%@\")}",
             [n intValue], b64];
     }
     [css appendString:@"</style>"];

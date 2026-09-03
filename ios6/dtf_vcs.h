@@ -86,3 +86,7 @@ NSString *DTFAgo(NSTimeInterval unixTime);
 /// Compose and publish a text post.
 @interface EditorViewController : UIViewController <UITextFieldDelegate>
 @end
+
+/// Reports what actually happens at each step, so faults stop being guesswork.
+@interface DiagnosticsViewController : UIViewController
+@end

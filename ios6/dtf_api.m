@@ -262,6 +262,7 @@ static id DTFApiGet(NSString *version, NSString *rest, NSString **error)
         email, @"email", password, @"password", nil];
     NSString *err = nil;
     NSData *d = DTFPostForm(kApiHost, @"/v3.0/auth/email/login", fields, &err);
+    int loginStatus = DTFLastStatus();
     if (d == nil) { if (error) *error = err ? err : @"нет ответа"; return nil; }
 
     id root = [NSJSONSerialization JSONObjectWithData:d options:0 error:NULL];
@@ -294,7 +295,7 @@ static id DTFApiGet(NSString *version, NSString *rest, NSString **error)
     NSDictionary *result = fromResult != nil ? fromResult : fromData;
 
     if (error) {
-        int status = DTFLastStatus();
+        int status = loginStatus;
         id msg = [rootDict objectForKey:@"message"];
         if ([msg isKindOfClass:[NSString class]] && [msg length] > 0) {
             /* Surface the server's own words — "Too many calls" is common here

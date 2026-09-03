@@ -60,7 +60,7 @@
 - (void)viewDidLoad
 {
     [super viewDidLoad];
-    self.title = @"Вход 0.9";
+    self.title = @"Вход 1.0";
     self.view.backgroundColor = DTFPaper();
 
     /* Everything lives in a scroll view: on a 3.5-inch screen with a tab bar
@@ -236,7 +236,7 @@ static NSString *const kImagesOn = @"dtf_images_on";
 {
     if (s == 0) return 2;   /* images, company filter */
     if (s == 1) return 1;   /* clear cache */
-    return 1;               /* about */
+    return 2;               /* about, diagnostics */
 }
 
 - (NSString *)tableView:(UITableView *)tv titleForHeaderInSection:(NSInteger)s
@@ -289,10 +289,14 @@ static NSString *const kImagesOn = @"dtf_images_on";
         cell.selectionStyle = UITableViewCellSelectionStyleNone;
     } else if (ip.section == 1) {
         cell.textLabel.text = @"Очистить кэш картинок";
-    } else {
+    } else if (ip.row == 0) {
         cell.textLabel.text = @"DTF by Vino для iOS 6";
-        cell.detailTextLabel.text = @"версия 0.9";
+        cell.detailTextLabel.text = @"версия 1.0";
         cell.selectionStyle = UITableViewCellSelectionStyleNone;
+    } else {
+        cell.textLabel.text = @"Диагностика";
+        cell.detailTextLabel.text = @"проверить картинки, сеть и токен";
+        cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
     }
     return cell;
 }
@@ -307,6 +311,12 @@ static NSString *const kImagesOn = @"dtf_images_on";
 - (void)tableView:(UITableView *)tv didSelectRowAtIndexPath:(NSIndexPath *)ip
 {
     [tv deselectRowAtIndexPath:ip animated:YES];
+
+    if (ip.section == 2 && ip.row == 1) {
+        [self.navigationController pushViewController:
+            [[[DiagnosticsViewController alloc] init] autorelease] animated:YES];
+        return;
+    }
     if (ip.section != 1) return;
 
     NSArray *paths = NSSearchPathForDirectoriesInDomains(
@@ -443,6 +453,128 @@ static NSString *const kImagesOn = @"dtf_images_on";
                 self.statusLabel.text = err ? err : @"Не удалось опубликовать";
             }
         });
+    });
+}
+
+@end
+
+/* ------------------------------------------------------------------ */
+/* Diagnostics                                                         */
+/* ------------------------------------------------------------------ */
+
+@interface DiagnosticsViewController ()
+@property (nonatomic, retain) UITextView *out;
+@property (nonatomic, retain) UIWebView *probe;
+@end
+
+@implementation DiagnosticsViewController
+@synthesize out, probe;
+
+- (void)dealloc { [out release]; [probe release]; [super dealloc]; }
+
+- (void)viewDidLoad
+{
+    [super viewDidLoad];
+    self.title = @"Диагностика";
+    self.view.backgroundColor = DTFPaper();
+
+    CGRect b = self.view.bounds;
+    self.out = [[[UITextView alloc] initWithFrame:
+        CGRectMake(0.0f, 0.0f, b.size.width, b.size.height - 120.0f)] autorelease];
+    self.out.editable = NO;
+    self.out.font = [UIFont systemFontOfSize:11.0f];
+    self.out.autoresizingMask =
+        UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+    [self.view addSubview:self.out];
+
+    /* A tiny page that reports back whether an embedded picture actually
+       rendered — the one thing that cannot be checked from the outside. */
+    self.probe = [[[UIWebView alloc] initWithFrame:
+        CGRectMake(0.0f, b.size.height - 118.0f, b.size.width, 110.0f)] autorelease];
+    self.probe.autoresizingMask =
+        UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleTopMargin;
+    [self.view addSubview:self.probe];
+
+    [self run];
+}
+
+- (void)add:(NSString *)line
+{
+    dispatch_async(dispatch_get_main_queue(), ^{
+        self.out.text = [NSString stringWithFormat:@"%@%@\n", self.out.text, line];
+    });
+}
+
+- (void)run
+{
+    self.out.text = @"";
+    [self add:@"— ИКОНКИ РЕАКЦИЙ В ПАКЕТЕ —"];
+
+    NSString *rx1 = [[NSBundle mainBundle] pathForResource:@"rx1" ofType:@"png"];
+    if (rx1 == nil) {
+        [self add:@"rx1.png: НЕ НАЙДЕН в пакете"];
+    } else {
+        NSData *d = [NSData dataWithContentsOfFile:rx1];
+        [self add:[NSString stringWithFormat:@"rx1.png: %d байт", (int)[d length]]];
+        NSString *b64 = DTFBase64(d);
+        [self add:[NSString stringWithFormat:@"base64: %d символов, начало %@",
+                   (int)[b64 length],
+                   [b64 length] > 16 ? [b64 substringToIndex:16] : b64]];
+
+        /* Render it two ways and let the page itself say what worked. */
+        NSString *html = [NSString stringWithFormat:
+            @"<html><body style='font:12px Helvetica;margin:4px'>"
+             "<style>.t{width:24px;height:24px;display:inline-block;"
+             "background-size:contain;background-repeat:no-repeat;"
+             "background-image:url(\"data:image/png;base64,%@\")}</style>"
+             "тег: <img src='data:image/png;base64,%@' width='24' height='24'> &nbsp; "
+             "фон: <i class='t'></i>"
+             "</body></html>", b64, b64];
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [self.probe loadHTMLString:html baseURL:nil];
+        });
+        [self add:@"внизу проверка: слева картинкой, справа фоном"];
+    }
+
+    [self add:@""];
+    [self add:@"— КЭШ КАРТИНОК —"];
+    NSArray *paths = NSSearchPathForDirectoriesInDomains(
+        NSCachesDirectory, NSUserDomainMask, YES);
+    NSString *dir = [[paths objectAtIndex:0] stringByAppendingPathComponent:@"dtfimg"];
+    [self add:dir];
+
+    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
+        [self add:@"качаю тестовую аватарку…"];
+        NSString *uuid = @"4a807844-802c-5362-9b9e-3064efee09e5";
+        NSDate *t0 = [NSDate date];
+        NSData *img = [DTFImages fetchUuid:uuid width:48];
+        [self add:[NSString stringWithFormat:@"аватарка: %d байт за %.1f сек",
+                   (int)[img length], -[t0 timeIntervalSinceNow]]];
+        NSString *ready = [DTFImages readyPathFor:uuid width:48];
+        [self add:[NSString stringWithFormat:@"файл на диске: %@",
+                   ready ? @"есть" : @"НЕТ"]];
+
+        [self add:@""];
+        [self add:@"— СКОРОСТЬ СЕТИ —"];
+        NSDate *t1 = [NSDate date];
+        NSData *a = DTFGet(kApiHost, @"/v2.31/subsite?id=494450", NULL);
+        [self add:[NSString stringWithFormat:@"1-й запрос: %d байт за %.1f сек",
+                   (int)[a length], -[t1 timeIntervalSinceNow]]];
+        NSDate *t2 = [NSDate date];
+        NSData *b2 = DTFGet(kApiHost, @"/v2.31/subsite?id=494450", NULL);
+        [self add:[NSString stringWithFormat:@"2-й запрос: %d байт за %.1f сек "
+                   "(должен быть быстрее — сессия переиспользуется)",
+                   (int)[b2 length], -[t2 timeIntervalSinceNow]]];
+
+        [self add:@""];
+        [self add:@"— ТОКЕН —"];
+        [self add:DTFToken() ? @"сохранён" : @"нет"];
+        if (DTFToken() != nil) {
+            NSString *err = nil;
+            NSDictionary *me = [DTFApi meWithError:&err];
+            [self add:[NSString stringWithFormat:@"subsite/me: %@ (HTTP %d)%@",
+                       me ? @"ok" : @"отказ", DTFLastStatus(), err ? err : @""]];
+        }
     });
 }
 
