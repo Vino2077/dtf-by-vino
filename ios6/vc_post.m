@@ -16,13 +16,21 @@ static UIImage *DTFReactionImage(NSInteger rid)
 
 static NSString *DTFReactionTag(NSInteger rid)
 {
-    /* Size is set on the tag itself, not left to the stylesheet: while the page
-       was still being laid out these rendered at full size and filled half the
-       screen. An inline style cannot be overridden. */
+    /* Absolute path, because the pictures the article also needs (avatars and
+       photos) live in the caches directory, not next to the bundle — a single
+       relative base could not reach both.
+
+       Size is set on the tag itself rather than in the stylesheet: while a
+       heavy page was still being laid out these briefly rendered at full size
+       and filled half the screen. An inline style cannot be overridden. */
+    NSString *file = [[NSBundle mainBundle]
+        pathForResource:[NSString stringWithFormat:@"rx%d", (int)rid] ofType:@"png"];
+    if (file == nil) return [NSString stringWithFormat:@"#%d", (int)rid];
+
     return [NSString stringWithFormat:
-        @"<img src='rx%d.png' width='16' height='16' "
+        @"<img src='file://%@' width='16' height='16' "
          "style='width:16px;height:16px;display:inline;vertical-align:-3px;"
-         "margin:0;border:0;box-shadow:none;border-radius:0'>", (int)rid];
+         "margin:0;border:0;box-shadow:none;border-radius:0'>", file];
 }
 
 /* Tallies rendered as pills, used under both posts and comments. */
@@ -177,7 +185,9 @@ static NSString *DTFReactionPills(id reactions)
 
 - (NSURL *)baseURL
 {
-    return [NSURL fileURLWithPath:[[NSBundle mainBundle] resourcePath] isDirectory:YES];
+    /* Rooted at "/" so the page may read both the bundled icons and the cached
+       pictures; they sit in different directories. */
+    return [NSURL fileURLWithPath:@"/" isDirectory:YES];
 }
 
 - (NSString *)reactionsHtmlPending:(NSMutableDictionary *)pending

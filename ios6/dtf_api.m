@@ -266,18 +266,32 @@ static id DTFApiGet(NSString *version, NSString *rest, NSString **error)
 
     id root = [NSJSONSerialization JSONObjectWithData:d options:0 error:NULL];
     NSDictionary *rootDict = DTFDict(root);
-    /* v3.0 auth answers with `data`, not the `result` every other route uses. */
-    NSDictionary *result = DTFDict([rootDict objectForKey:@"data"]);
-    if (result == nil) result = DTFDict([rootDict objectForKey:@"result"]);
 
-    /* The token field has moved around between versions, so try the plausible
-       names and keep the first one the server actually accepts. */
+    /* The payload sits under `result` on success and `data` on errors, and the
+       token field itself has moved between versions — so look through every
+       plausible place rather than betting on one. */
+    NSMutableArray *places = [NSMutableArray array];
+    NSDictionary *fromResult = DTFDict([rootDict objectForKey:@"result"]);
+    NSDictionary *fromData = DTFDict([rootDict objectForKey:@"data"]);
+    if (fromResult != nil) [places addObject:fromResult];
+    if (fromData != nil) [places addObject:fromData];
+    if (rootDict != nil) [places addObject:rootDict];
+
     NSArray *keys = [NSArray arrayWithObjects:@"token", @"accessToken",
                      @"access_token", @"jwt", @"deviceToken", nil];
-    for (NSString *k in keys) {
-        NSString *t = DTFStr([result objectForKey:k]);
-        if ([t length] > 10 && [self validateToken:t]) return t;
+    NSMutableArray *candidates = [NSMutableArray array];
+    for (NSDictionary *place in places) {
+        for (NSString *k in keys) {
+            NSString *t = DTFStr([place objectForKey:k]);
+            if ([t length] > 10 && ![candidates containsObject:t]) [candidates addObject:t];
+        }
     }
+    /* Each check is a network round trip, so only the plausible ones are tried. */
+    for (NSString *t in candidates) {
+        if ([self validateToken:t]) return t;
+    }
+
+    NSDictionary *result = fromResult != nil ? fromResult : fromData;
 
     if (error) {
         int status = DTFLastStatus();

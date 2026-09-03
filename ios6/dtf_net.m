@@ -2,6 +2,8 @@
 
 #include <sys/time.h>
 #include <sys/socket.h>
+#include <pthread.h>
+#include <string.h>
 #include "mbedtls/net_sockets.h"
 #include "mbedtls/ssl.h"
 #include "mbedtls/entropy.h"
@@ -45,6 +47,41 @@ void DTFSetToken(NSString *token)
 static int gLastStatus = 0;
 
 int DTFLastStatus(void) { return gLastStatus; }
+
+/* Reusing the TLS session between requests.
+ *
+ * A full handshake means an ECDHE key exchange and a certificate chain check,
+ * which on a 600 MHz single core costs seconds — and every screen makes
+ * several requests. Keeping the negotiated session per host lets the next
+ * connection resume it: no key exchange, no chain rebuild, just a couple of
+ * round trips. This is the single biggest speed-up available here. */
+#define DTF_HOST_SLOTS 4
+
+typedef struct {
+    char host[64];
+    mbedtls_ssl_session session;
+    int valid;
+} DTFSessionSlot;
+
+static DTFSessionSlot gSessions[DTF_HOST_SLOTS];
+static pthread_mutex_t gSessionLock = PTHREAD_MUTEX_INITIALIZER;
+
+static DTFSessionSlot *DTFSlotFor(const char *host)
+{
+    for (int i = 0; i < DTF_HOST_SLOTS; i++) {
+        if (gSessions[i].host[0] != 0 && strcmp(gSessions[i].host, host) == 0) {
+            return &gSessions[i];
+        }
+    }
+    for (int i = 0; i < DTF_HOST_SLOTS; i++) {
+        if (gSessions[i].host[0] == 0) {
+            strncpy(gSessions[i].host, host, sizeof(gSessions[i].host) - 1);
+            mbedtls_ssl_session_init(&gSessions[i].session);
+            return &gSessions[i];
+        }
+    }
+    return NULL;
+}
 
 static NSString *DTFErrText(const char *stage, int ret)
 {
@@ -119,11 +156,30 @@ static NSData *DTFRequest(NSString *host, NSString *path, NSString *method,
     if (ret != 0) DTF_FAIL("sni", ret);
     mbedtls_ssl_set_bio(&ssl, &server, mbedtls_net_send, NULL, mbedtls_net_recv_timeout);
 
+    /* Resume the previous session with this host when we have one. */
+    pthread_mutex_lock(&gSessionLock);
+    {
+        DTFSessionSlot *slot = DTFSlotFor(chost);
+        if (slot != NULL && slot->valid) mbedtls_ssl_set_session(&ssl, &slot->session);
+    }
+    pthread_mutex_unlock(&gSessionLock);
+
     while ((ret = mbedtls_ssl_handshake(&ssl)) != 0) {
         if (ret != MBEDTLS_ERR_SSL_WANT_READ && ret != MBEDTLS_ERR_SSL_WANT_WRITE) {
             DTF_FAIL("handshake", ret);
         }
     }
+
+    pthread_mutex_lock(&gSessionLock);
+    {
+        DTFSessionSlot *slot = DTFSlotFor(chost);
+        if (slot != NULL) {
+            mbedtls_ssl_session_free(&slot->session);
+            mbedtls_ssl_session_init(&slot->session);
+            slot->valid = (mbedtls_ssl_get_session(&ssl, &slot->session) == 0);
+        }
+    }
+    pthread_mutex_unlock(&gSessionLock);
 
     {
         NSMutableString *head = [NSMutableString stringWithFormat:

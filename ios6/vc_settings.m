@@ -57,7 +57,7 @@
 - (void)viewDidLoad
 {
     [super viewDidLoad];
-    self.title = @"Вход 0.7";
+    self.title = @"Вход 0.8";
     self.view.backgroundColor = DTFPaper();
 
     [self captionAt:12.0f text:@"ПОЧТА И ПАРОЛЬ"];
@@ -119,6 +119,7 @@
     if (ok) {
         [self.navigationController popViewControllerAnimated:YES];
     } else {
+        self.errorLabel.textColor = [UIColor colorWithRed:0.7f green:0.1f blue:0.1f alpha:1.0f];
         self.errorLabel.text = message;
     }
 }
@@ -131,7 +132,8 @@
         self.errorLabel.text = @"Заполни почту и пароль";
         return;
     }
-    self.errorLabel.text = @"";
+    self.errorLabel.textColor = [UIColor grayColor];
+    self.errorLabel.text = @"Проверяю… на этом устройстве это занимает до минуты";
     [self.spinner startAnimating];
 
     dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
@@ -240,7 +242,7 @@ static NSString *const kImagesOn = @"dtf_images_on";
         cell.textLabel.text = @"Очистить кэш картинок";
     } else {
         cell.textLabel.text = @"DTF by Vino для iOS 6";
-        cell.detailTextLabel.text = @"версия 0.7";
+        cell.detailTextLabel.text = @"версия 0.8";
         cell.selectionStyle = UITableViewCellSelectionStyleNone;
     }
     return cell;
