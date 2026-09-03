@@ -8,20 +8,23 @@
 /* ------------------------------------------------------------------ */
 
 @interface LoginViewController ()
+@property (nonatomic, retain) UIScrollView *scroll;
 @property (nonatomic, retain) UITextField *emailField;
 @property (nonatomic, retain) UITextField *passwordField;
 @property (nonatomic, retain) UITextView *tokenField;
-@property (nonatomic, retain) UILabel *errorLabel;
+@property (nonatomic, retain) UILabel *statusLabel;
 @property (nonatomic, retain) UIActivityIndicatorView *spinner;
+@property (nonatomic, retain) UIButton *goButton;
 @end
 
 @implementation LoginViewController
-@synthesize emailField, passwordField, tokenField, errorLabel, spinner;
+@synthesize scroll, emailField, passwordField, tokenField, statusLabel, spinner, goButton;
 
 - (void)dealloc
 {
-    [emailField release]; [passwordField release]; [tokenField release];
-    [errorLabel release]; [spinner release];
+    [scroll release]; [emailField release]; [passwordField release];
+    [tokenField release]; [statusLabel release]; [spinner release];
+    [goButton release];
     [super dealloc];
 }
 
@@ -37,7 +40,7 @@
     f.autocorrectionType = UITextAutocorrectionTypeNo;
     f.delegate = self;
     f.autoresizingMask = UIViewAutoresizingFlexibleWidth;
-    [self.view addSubview:f];
+    [self.scroll addSubview:f];
     return f;
 }
 
@@ -50,78 +53,120 @@
     l.textColor = [UIColor colorWithWhite:0.35f alpha:1.0f];
     l.autoresizingMask = UIViewAutoresizingFlexibleWidth;
     DTFLetterpress(l);
-    [self.view addSubview:l];
+    [self.scroll addSubview:l];
     return l;
 }
 
 - (void)viewDidLoad
 {
     [super viewDidLoad];
-    self.title = @"Вход 0.8";
+    self.title = @"Вход 0.9";
     self.view.backgroundColor = DTFPaper();
 
-    [self captionAt:12.0f text:@"ПОЧТА И ПАРОЛЬ"];
-    self.emailField = [self fieldAt:34.0f placeholder:@"email@example.com" secure:NO];
+    /* Everything lives in a scroll view: on a 3.5-inch screen with a tab bar
+       there are only ~367 points of room, and the earlier fixed layout put the
+       progress text and spinner below that — the sign-in looked like it did
+       nothing at all when in fact it was running. */
+    self.scroll = [[[UIScrollView alloc] initWithFrame:self.view.bounds] autorelease];
+    self.scroll.autoresizingMask =
+        UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+    self.scroll.backgroundColor = DTFPaper();
+    [self.view addSubview:self.scroll];
+
+    CGFloat w = self.view.bounds.size.width;
+
+    /* Status sits directly under the button, well inside the visible area. */
+    self.statusLabel = [[[UILabel alloc] initWithFrame:
+        CGRectMake(14.0f, 8.0f, w - 28.0f, 38.0f)] autorelease];
+    self.statusLabel.numberOfLines = 2;
+    self.statusLabel.font = [UIFont boldSystemFontOfSize:13.0f];
+    self.statusLabel.textAlignment = UITextAlignmentCenter;
+    self.statusLabel.textColor = [UIColor colorWithWhite:0.3f alpha:1.0f];
+    self.statusLabel.autoresizingMask = UIViewAutoresizingFlexibleWidth;
+    DTFLetterpress(self.statusLabel);
+    [self.scroll addSubview:self.statusLabel];
+
+    self.spinner = [[[UIActivityIndicatorView alloc]
+        initWithActivityIndicatorStyle:UIActivityIndicatorViewStyleGray] autorelease];
+    self.spinner.center = CGPointMake(w / 2.0f, 60.0f);
+    self.spinner.autoresizingMask =
+        UIViewAutoresizingFlexibleLeftMargin | UIViewAutoresizingFlexibleRightMargin;
+    [self.scroll addSubview:self.spinner];
+
+    [self captionAt:80.0f text:@"ПОЧТА И ПАРОЛЬ"];
+    self.emailField = [self fieldAt:102.0f placeholder:@"email@example.com" secure:NO];
     self.emailField.keyboardType = UIKeyboardTypeEmailAddress;
-    self.passwordField = [self fieldAt:74.0f placeholder:@"Пароль" secure:YES];
+    self.passwordField = [self fieldAt:142.0f placeholder:@"Пароль" secure:YES];
 
-    UIButton *go = DTFButton(@"Войти", self, @selector(loginWithPassword));
-    go.frame = CGRectMake(14.0f, 116.0f, self.view.bounds.size.width - 28.0f, 40.0f);
-    go.autoresizingMask = UIViewAutoresizingFlexibleWidth;
-    [self.view addSubview:go];
+    self.goButton = DTFButton(@"Войти", self, @selector(loginWithPassword));
+    self.goButton.frame = CGRectMake(14.0f, 184.0f, w - 28.0f, 42.0f);
+    self.goButton.autoresizingMask = UIViewAutoresizingFlexibleWidth;
+    [self.scroll addSubview:self.goButton];
 
-    [self captionAt:172.0f text:@"ИЛИ ТОКЕН"];
+    [self captionAt:240.0f text:@"ИЛИ ТОКЕН"];
     UILabel *hint = [[[UILabel alloc] initWithFrame:
-        CGRectMake(16.0f, 192.0f, self.view.bounds.size.width - 32.0f, 46.0f)] autorelease];
+        CGRectMake(16.0f, 260.0f, w - 32.0f, 46.0f)] autorelease];
     hint.text = @"На сайте: Профиль → Настройки → внизу «Инструменты для разработчика».";
     hint.numberOfLines = 3;
     hint.font = [UIFont systemFontOfSize:12.0f];
     hint.textColor = [UIColor grayColor];
     hint.autoresizingMask = UIViewAutoresizingFlexibleWidth;
     DTFLetterpress(hint);
-    [self.view addSubview:hint];
+    [self.scroll addSubview:hint];
 
     self.tokenField = [[[UITextView alloc] initWithFrame:
-        CGRectMake(14.0f, 240.0f, self.view.bounds.size.width - 28.0f, 58.0f)] autorelease];
+        CGRectMake(14.0f, 308.0f, w - 28.0f, 58.0f)] autorelease];
     self.tokenField.font = [UIFont systemFontOfSize:11.0f];
     self.tokenField.layer.borderColor = [[UIColor colorWithWhite:0.7f alpha:1.0f] CGColor];
     self.tokenField.layer.borderWidth = 1.0f;
     self.tokenField.layer.cornerRadius = 6.0f;
     self.tokenField.autoresizingMask = UIViewAutoresizingFlexibleWidth;
-    [self.view addSubview:self.tokenField];
+    [self.scroll addSubview:self.tokenField];
 
     UIButton *useToken = DTFButton(@"Войти по токену", self, @selector(loginWithToken));
-    useToken.frame = CGRectMake(14.0f, 304.0f, self.view.bounds.size.width - 28.0f, 38.0f);
+    useToken.frame = CGRectMake(14.0f, 374.0f, w - 28.0f, 40.0f);
     useToken.autoresizingMask = UIViewAutoresizingFlexibleWidth;
-    [self.view addSubview:useToken];
+    [self.scroll addSubview:useToken];
 
-    self.errorLabel = [[[UILabel alloc] initWithFrame:
-        CGRectMake(14.0f, 348.0f, self.view.bounds.size.width - 28.0f, 60.0f)] autorelease];
-    self.errorLabel.numberOfLines = 3;
-    self.errorLabel.font = [UIFont systemFontOfSize:13.0f];
-    self.errorLabel.textColor = [UIColor colorWithRed:0.7f green:0.1f blue:0.1f alpha:1.0f];
-    self.errorLabel.textAlignment = UITextAlignmentCenter;
-    self.errorLabel.autoresizingMask = UIViewAutoresizingFlexibleWidth;
-    DTFLetterpress(self.errorLabel);
-    [self.view addSubview:self.errorLabel];
-
-    self.spinner = [[[UIActivityIndicatorView alloc]
-        initWithActivityIndicatorStyle:UIActivityIndicatorViewStyleGray] autorelease];
-    self.spinner.center = CGPointMake(self.view.bounds.size.width / 2.0f, 410.0f);
-    [self.view addSubview:self.spinner];
+    self.scroll.contentSize = CGSizeMake(w, 430.0f);
 }
 
 - (BOOL)textFieldShouldReturn:(UITextField *)tf { [tf resignFirstResponder]; return YES; }
 
+/* Progress is reported step by step: on this hardware each stage takes real
+   seconds, and silence is indistinguishable from a dead button. */
+- (void)say:(NSString *)text
+{
+    dispatch_async(dispatch_get_main_queue(), ^{
+        self.statusLabel.textColor = [UIColor colorWithWhite:0.3f alpha:1.0f];
+        self.statusLabel.text = text;
+    });
+}
+
+- (void)startWork:(NSString *)text
+{
+    self.goButton.enabled = NO;
+    [self.spinner startAnimating];
+    [self say:text];
+}
+
 - (void)finishOk:(BOOL)ok message:(NSString *)message
 {
     [self.spinner stopAnimating];
+    self.goButton.enabled = YES;
     if (ok) {
+        self.statusLabel.text = @"Готово";
         [self.navigationController popViewControllerAnimated:YES];
-    } else {
-        self.errorLabel.textColor = [UIColor colorWithRed:0.7f green:0.1f blue:0.1f alpha:1.0f];
-        self.errorLabel.text = message;
+        return;
     }
+    self.statusLabel.textColor = [UIColor colorWithRed:0.7f green:0.1f blue:0.1f alpha:1.0f];
+    self.statusLabel.text = message;
+    /* Also as an alert, so the reason cannot be missed. */
+    [[[[UIAlertView alloc] initWithTitle:@"Не удалось войти"
+                                 message:message
+                                delegate:nil
+                       cancelButtonTitle:@"Понятно"
+                       otherButtonTitles:nil] autorelease] show];
 }
 
 - (void)loginWithPassword
@@ -129,20 +174,24 @@
     NSString *email = self.emailField.text;
     NSString *pass = self.passwordField.text;
     if ([email length] == 0 || [pass length] == 0) {
-        self.errorLabel.text = @"Заполни почту и пароль";
+        [self finishOk:NO message:@"Заполни почту и пароль"];
         return;
     }
-    self.errorLabel.textColor = [UIColor grayColor];
-    self.errorLabel.text = @"Проверяю… на этом устройстве это занимает до минуты";
-    [self.spinner startAnimating];
+    [self.emailField resignFirstResponder];
+    [self.passwordField resignFirstResponder];
+    [self startWork:@"Соединяюсь с сервером…"];
 
     dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
+        [self say:@"Передаю данные, проверяю ключи шифрования…"];
         NSString *err = nil;
         NSString *token = [DTFApi loginWithEmail:email password:pass error:&err];
-        if ([token length] > 0) DTFSetToken(token);
+        if ([token length] > 0) {
+            [self say:@"Проверяю доступ…"];
+            DTFSetToken(token);
+        }
         dispatch_async(dispatch_get_main_queue(), ^{
             [self finishOk:[token length] > 0
-                   message:err ? err : @"Не удалось войти"];
+                   message:err ? err : @"Сервер не принял почту и пароль"];
         });
     });
 }
@@ -151,9 +200,9 @@
 {
     NSString *t = [self.tokenField.text stringByTrimmingCharactersInSet:
         [NSCharacterSet whitespaceAndNewlineCharacterSet]];
-    if ([t length] < 10) { self.errorLabel.text = @"Вставь токен"; return; }
-    self.errorLabel.text = @"";
-    [self.spinner startAnimating];
+    if ([t length] < 10) { [self finishOk:NO message:@"Вставь токен"]; return; }
+    [self.tokenField resignFirstResponder];
+    [self startWork:@"Проверяю токен…"];
 
     dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
         BOOL ok = [DTFApi validateToken:t];
@@ -242,7 +291,7 @@ static NSString *const kImagesOn = @"dtf_images_on";
         cell.textLabel.text = @"Очистить кэш картинок";
     } else {
         cell.textLabel.text = @"DTF by Vino для iOS 6";
-        cell.detailTextLabel.text = @"версия 0.8";
+        cell.detailTextLabel.text = @"версия 0.9";
         cell.selectionStyle = UITableViewCellSelectionStyleNone;
     }
     return cell;

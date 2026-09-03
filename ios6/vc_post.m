@@ -4,37 +4,52 @@
 #import "dtf_net.h"
 
 /* Reaction icons ship inside the app bundle as rx<id>.png.
-   They are referenced by filename, never inlined: a post with a hundred
-   comments repeats the same few icons hundreds of times, and embedding each
-   copy as base64 built a multi-megabyte page that this device could not hold.
-   The web view is given the bundle as its base URL so it can read them off
-   disk directly. */
+ *
+ * Each icon is embedded once, as a CSS class, and every occurrence is then a
+ * tiny <span>. Two earlier attempts failed: embedding the picture at every
+ * occurrence built a multi-megabyte page (a hundred comments repeat the same
+ * few icons) and crashed the device, while pointing at the files on disk left
+ * them blank, because the page is not allowed to read them. Embedding once
+ * avoids both. */
 static UIImage *DTFReactionImage(NSInteger rid)
 {
     return [UIImage imageNamed:[NSString stringWithFormat:@"rx%d.png", (int)rid]];
 }
 
-static NSString *DTFReactionTag(NSInteger rid)
+static NSString *DTFReactionBase64(NSInteger rid)
 {
-    /* Absolute path, because the pictures the article also needs (avatars and
-       photos) live in the caches directory, not next to the bundle — a single
-       relative base could not reach both.
+    static NSMutableDictionary *cache = nil;
+    if (cache == nil) cache = [[NSMutableDictionary alloc] init];
 
-       Size is set on the tag itself rather than in the stylesheet: while a
-       heavy page was still being laid out these briefly rendered at full size
-       and filled half the screen. An inline style cannot be overridden. */
+    NSString *key = [NSString stringWithFormat:@"%d", (int)rid];
+    NSString *hit = [cache objectForKey:key];
+    if (hit != nil) return [hit length] > 0 ? hit : nil;
+
     NSString *file = [[NSBundle mainBundle]
         pathForResource:[NSString stringWithFormat:@"rx%d", (int)rid] ofType:@"png"];
-    if (file == nil) return [NSString stringWithFormat:@"#%d", (int)rid];
+    NSData *d = file != nil ? [NSData dataWithContentsOfFile:file] : nil;
+    NSString *b64 = [d length] > 0 ? DTFBase64(d) : @"";
+    [cache setObject:b64 forKey:key];
+    return [b64 length] > 0 ? b64 : nil;
+}
 
-    return [NSString stringWithFormat:
-        @"<img src='file://%@' width='16' height='16' "
-         "style='width:16px;height:16px;display:inline;vertical-align:-3px;"
-         "margin:0;border:0;box-shadow:none;border-radius:0'>", file];
+/* One <style> rule per reaction actually shown on the page. */
+static NSString *DTFReactionStyle(NSSet *ids)
+{
+    if ([ids count] == 0) return @"";
+    NSMutableString *css = [NSMutableString stringWithString:@"<style>"];
+    for (NSNumber *n in ids) {
+        NSString *b64 = DTFReactionBase64([n integerValue]);
+        if (b64 == nil) continue;
+        [css appendFormat:@".r%d{background-image:url(data:image/png;base64,%@)}",
+            [n intValue], b64];
+    }
+    [css appendString:@"</style>"];
+    return css;
 }
 
 /* Tallies rendered as pills, used under both posts and comments. */
-static NSString *DTFReactionPills(id reactions)
+static NSString *DTFReactionPills(id reactions, NSMutableSet *used)
 {
     NSArray *counters = DTFArr([DTFDict(reactions) objectForKey:@"counters"]);
     if ([counters count] == 0) return @"";
@@ -43,8 +58,14 @@ static NSString *DTFReactionPills(id reactions)
         NSDictionary *cd = DTFDict(c);
         NSInteger n = DTFInt([cd objectForKey:@"count"]);
         if (n <= 0) continue;
-        [h appendFormat:@"<span class='pill'>%@ %d</span>",
-            DTFReactionTag(DTFInt([cd objectForKey:@"id"])), (int)n];
+        NSInteger rid = DTFInt([cd objectForKey:@"id"]);
+        if (DTFReactionBase64(rid) == nil) {
+            [h appendFormat:@"<span class='pill'>#%d %d</span>", (int)rid, (int)n];
+            continue;
+        }
+        [used addObject:[NSNumber numberWithInteger:rid]];
+        [h appendFormat:@"<span class='pill'><i class='rx r%d'></i>%d</span>",
+            (int)rid, (int)n];
     }
     [h appendString:@"</div>"];
     return h;
@@ -60,17 +81,19 @@ static NSString *DTFReactionPills(id reactions)
 @property (nonatomic, assign) BOOL favorited;
 @property (nonatomic, assign) NSInteger replyTo;      /* comment being answered */
 @property (nonatomic, assign) NSInteger reactTarget;  /* comment being reacted to */
+@property (nonatomic, retain) NSMutableSet *usedReactions;
 @end
 
 @implementation PostViewController
 @synthesize postId, headerTitle;
 @synthesize web, spinner, postData, commentData, inlineImages, reactionBar, favorited;
-@synthesize replyTo, reactTarget;
+@synthesize replyTo, reactTarget, usedReactions;
 
 - (void)dealloc
 {
     [headerTitle release]; [web release]; [spinner release];
     [postData release]; [commentData release]; [inlineImages release];
+    [usedReactions release];
     [reactionBar release];
     [super dealloc];
 }
@@ -166,15 +189,22 @@ static NSString *DTFReactionPills(id reactions)
 {
     NSString *file = [DTFImages readyPathFor:uuid width:width];
     if (file != nil) {
-        if ([cls isEqualToString:@"av"]) {
+        /* Embedded rather than linked: the page cannot read files off disk.
+           Avatars are one per author, so nothing is duplicated here. */
+        NSData *d = [NSData dataWithContentsOfFile:file];
+        if ([d length] > 0) {
+            NSString *b64 = DTFBase64(d);
+            if ([cls isEqualToString:@"av"]) {
+                return [NSString stringWithFormat:
+                    @"<img src='data:image/jpeg;base64,%@' width='20' height='20' "
+                     "style='width:20px;height:20px;display:inline-block;"
+                     "vertical-align:-5px;margin:0 5px 0 0;border:0;box-shadow:none;"
+                     "border-radius:4px'>", b64];
+            }
             return [NSString stringWithFormat:
-                @"<img src='file://%@' width='20' height='20' "
-                 "style='width:20px;height:20px;display:inline-block;"
-                 "vertical-align:-5px;margin:0 5px 0 0;border:0;box-shadow:none;"
-                 "border-radius:4px'>", file];
+                @"<img class='%@' src='data:image/jpeg;base64,%@'>",
+                cls ? cls : @"", b64];
         }
-        return [NSString stringWithFormat:@"<img class='%@' src='file://%@'>",
-                cls ? cls : @"", file];
     }
     if ([pending objectForKey:uuid] == nil) {
         [pending setObject:[NSNumber numberWithInt:width] forKey:uuid];
@@ -183,17 +213,9 @@ static NSString *DTFReactionPills(id reactions)
     return @"<div class='note'>картинка загружается…</div>";
 }
 
-- (NSURL *)baseURL
+- (NSString *)reactionsHtmlUsed:(NSMutableSet *)used
 {
-    /* Rooted at "/" so the page may read both the bundled icons and the cached
-       pictures; they sit in different directories. */
-    return [NSURL fileURLWithPath:@"/" isDirectory:YES];
-}
-
-- (NSString *)reactionsHtmlPending:(NSMutableDictionary *)pending
-{
-    /* Icons come from the bundle now, so nothing here needs downloading. */
-    return DTFReactionPills([self.postData objectForKey:@"reactions"]);
+    return DTFReactionPills([self.postData objectForKey:@"reactions"], used);
 }
 
 - (NSString *)bodyHtmlPending:(NSMutableDictionary *)pending
@@ -312,7 +334,7 @@ static NSString *DTFReactionPills(id reactions)
         }
     }
 
-    [h appendString:[self reactionsHtmlPending:pending]];
+    [h appendString:[self reactionsHtmlUsed:self.usedReactions]];
     return h;
 }
 
@@ -356,18 +378,28 @@ static NSString *DTFReactionPills(id reactions)
             ago,
             likes != 0 ? [NSString stringWithFormat:@" · %+d", (int)likes] : @"",
             text,
-            DTFReactionPills([cd objectForKey:@"reactions"]),
+            DTFReactionPills([cd objectForKey:@"reactions"], self.usedReactions),
             (int)cid, (int)cid];
     }
     return h;
 }
 
+/* The icon styles can only be written once the body is built, since that is
+   what records which reactions the page actually uses. */
+- (NSString *)reactionStyles
+{
+    return DTFReactionStyle(self.usedReactions);
+}
+
 - (void)renderFull
 {
+    self.usedReactions = [NSMutableSet set];
     NSMutableDictionary *ignore = [NSMutableDictionary dictionary];
-    NSString *page = [NSString stringWithFormat:@"%@%@%@</body></html>",
-        DTFHtmlHead(), [self bodyHtmlPending:ignore], [self commentsHtmlPending:ignore]];
-    [self.web loadHTMLString:page baseURL:[self baseURL]];
+    NSString *body = [self bodyHtmlPending:ignore];
+    NSString *comments = [self commentsHtmlPending:ignore];
+    NSString *page = [NSString stringWithFormat:@"%@%@%@%@</body></html>",
+        DTFHtmlHead(), [self reactionStyles], body, comments];
+    [self.web loadHTMLString:page baseURL:nil];
 }
 
 /* ---------------- loading ---------------- */
@@ -384,7 +416,7 @@ static NSString *DTFReactionPills(id reactions)
                 NSString *page = [NSString stringWithFormat:
                     @"%@<div class='note'>Не удалось загрузить пост:<br>%@</div></body></html>",
                     DTFHtmlHead(), err ? err : @"неизвестная ошибка"];
-                [self.web loadHTMLString:page baseURL:[self baseURL]];
+                [self.web loadHTMLString:page baseURL:nil];
             });
             return;
         }
@@ -395,9 +427,11 @@ static NSString *DTFReactionPills(id reactions)
             self.favorited = [[post objectForKey:@"isFavorited"] boolValue];
             [self.spinner stopAnimating];
             /* Text first — pictures and comments follow. */
-            NSString *page = [NSString stringWithFormat:@"%@%@</body></html>",
-                DTFHtmlHead(), [self bodyHtmlPending:pending]];
-            [self.web loadHTMLString:page baseURL:[self baseURL]];
+            self.usedReactions = [NSMutableSet set];
+            NSString *body = [self bodyHtmlPending:pending];
+            NSString *page = [NSString stringWithFormat:@"%@%@%@</body></html>",
+                DTFHtmlHead(), [self reactionStyles], body];
+            [self.web loadHTMLString:page baseURL:nil];
         });
 
         NSArray *comments = [DTFApi comments:self.postId error:NULL];

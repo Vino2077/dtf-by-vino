@@ -298,8 +298,9 @@ NSString *DTFHtmlHead(void)
             "margin:0 5px 0 0;border-radius:4px;background:#dcdcdc;border:0;"
             "box-shadow:none;object-fit:cover}"
             ".rxrow{margin:6px 0 2px}"
-            ".rx{width:19px;height:19px;display:inline;vertical-align:-4px;margin:0;"
-            "border:0;box-shadow:none;border-radius:3px}"
+            ".rx{width:16px;height:16px;display:inline-block;vertical-align:-3px;"
+            "margin:0 3px 0 0;background-repeat:no-repeat;background-position:center;"
+            "background-size:contain}"
             "border-radius:10px;padding:1px 8px;font-size:12px;color:#555;margin-right:5px}"
             "</style></head><body>";
 }
