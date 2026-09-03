@@ -192,7 +192,6 @@ static NSString *DTFPlain(NSString *html);
     self.navigationItem.rightBarButtonItem = [[[UIBarButtonItem alloc]
         initWithTitle:@"Подписаться" style:UIBarButtonItemStyleBordered
                target:self action:@selector(subscribe)] autorelease];
-    self.mineOwn = NO;
 
     self.tableView.tableHeaderView = [self buildHeader];
     [self loadInfo];
