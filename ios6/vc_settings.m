@@ -59,7 +59,7 @@
 - (void)viewDidLoad
 {
     [super viewDidLoad];
-    self.title = @"Вход 1.1";
+    self.title = @"Вход 1.2";
     self.view.backgroundColor = DTFPaper();
 
     /* Everything lives in a scroll view: on a 3.5-inch screen with a tab bar
@@ -249,7 +249,7 @@ static NSString *const kImagesOn = @"dtf_images_on";
         cell.textLabel.text = @"Очистить кэш картинок";
     } else if (ip.row == 0) {
         cell.textLabel.text = @"DTF by Vino для iOS 6";
-        cell.detailTextLabel.text = @"версия 1.1";
+        cell.detailTextLabel.text = @"версия 1.2";
         cell.selectionStyle = UITableViewCellSelectionStyleNone;
     } else {
         cell.textLabel.text = @"Диагностика";

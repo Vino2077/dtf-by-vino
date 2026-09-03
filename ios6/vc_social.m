@@ -192,6 +192,7 @@ static NSString *DTFPlain(NSString *html);
     self.navigationItem.rightBarButtonItem = [[[UIBarButtonItem alloc]
         initWithTitle:@"Подписаться" style:UIBarButtonItemStyleBordered
                target:self action:@selector(subscribe)] autorelease];
+    self.mineOwn = NO;
 
     self.tableView.tableHeaderView = [self buildHeader];
     [self loadInfo];
@@ -582,7 +583,16 @@ static NSInteger DTFPostIdFromUrl(NSString *url)
         if (![DTFApi isLoggedIn]) {
             LoginViewController *vc = [[[LoginViewController alloc] init] autorelease];
             [self.navigationController pushViewController:vc animated:YES];
+            return;
         }
+        /* Signed in: the row opens your own blog. */
+        NSInteger sid = DTFInt([self.me objectForKey:@"id"]);
+        if (sid <= 0) return;
+        SubsiteViewController *blog = [[[SubsiteViewController alloc]
+            initWithStyle:UITableViewStylePlain] autorelease];
+        blog.subsiteId = sid;
+        blog.subsiteName = DTFStr([self.me objectForKey:@"name"]);
+        [self.navigationController pushViewController:blog animated:YES];
         return;
     }
     NSInteger row = [DTFApi isLoggedIn] ? ip.row : ip.row + 1;
