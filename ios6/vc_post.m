@@ -33,39 +33,38 @@ static NSString *DTFReactionBase64(NSInteger rid)
     return [b64 length] > 0 ? b64 : nil;
 }
 
-/* One <style> rule per reaction actually shown on the page. */
-static NSString *DTFReactionStyle(NSSet *ids)
-{
-    if ([ids count] == 0) return @"";
-    NSMutableString *css = [NSMutableString stringWithString:@"<style>"];
-    for (NSNumber *n in ids) {
-        NSString *b64 = DTFReactionBase64([n integerValue]);
-        if (b64 == nil) continue;
-        [css appendFormat:@".r%d{background-image:url(\"data:image/png;base64,%@\")}",
-            [n intValue], b64];
-    }
-    [css appendString:@"</style>"];
-    return css;
-}
+/* Icons are drawn with a plain <img> and an embedded picture — the one method
+   the on-device check proved actually renders here. Embedding repeats the same
+   few icons, so the total is capped: past the limit a tally still shows, just
+   as "id · count". That keeps a hundred-comment page far below the size that
+   crashed the device earlier. */
+#define DTF_MAX_REACTION_ICONS 70
 
-/* Tallies rendered as pills, used under both posts and comments. */
 static NSString *DTFReactionPills(id reactions, NSMutableSet *used)
 {
     NSArray *counters = DTFArr([DTFDict(reactions) objectForKey:@"counters"]);
     if ([counters count] == 0) return @"";
+
     NSMutableString *h = [NSMutableString stringWithString:@"<div class='rxrow'>"];
     for (id c in counters) {
         NSDictionary *cd = DTFDict(c);
         NSInteger n = DTFInt([cd objectForKey:@"count"]);
         if (n <= 0) continue;
         NSInteger rid = DTFInt([cd objectForKey:@"id"]);
-        if (DTFReactionBase64(rid) == nil) {
-            [h appendFormat:@"<span class='pill'>#%d %d</span>", (int)rid, (int)n];
+
+        NSString *b64 = ([used count] < DTF_MAX_REACTION_ICONS)
+            ? DTFReactionBase64(rid) : nil;
+        if (b64 == nil) {
+            [h appendFormat:@"<span class='pill'>%d&nbsp;·&nbsp;%d</span>",
+                (int)rid, (int)n];
             continue;
         }
         [used addObject:[NSNumber numberWithInteger:rid]];
-        [h appendFormat:@"<span class='pill'><i class='rx r%d'></i>%d</span>",
-            (int)rid, (int)n];
+        [h appendFormat:
+            @"<span class='pill'><img src='data:image/png;base64,%@' "
+             "width='15' height='15' style='width:15px;height:15px;display:inline;"
+             "vertical-align:-2px;margin:0 3px 0 0;border:0;box-shadow:none;"
+             "border-radius:0'>%d</span>", b64, (int)n];
     }
     [h appendString:@"</div>"];
     return h;
@@ -388,7 +387,7 @@ static NSString *DTFReactionPills(id reactions, NSMutableSet *used)
    what records which reactions the page actually uses. */
 - (NSString *)reactionStyles
 {
-    return DTFReactionStyle(self.usedReactions);
+    return @"";   /* each icon now travels with its own tag */
 }
 
 - (void)renderFull

@@ -255,6 +255,33 @@ static id DTFApiGet(NSString *version, NSString *rest, NSString **error)
     return d != nil && err == nil;
 }
 
+/* Walks the whole response collecting anything that could be a token. The
+   field name has moved between API versions and the server answers "logined"
+   without saying where it put it, so guessing a fixed key was unreliable. */
+static void DTFCollectTokens(id node, NSMutableArray *out, NSMutableArray *keys)
+{
+    if ([node isKindOfClass:[NSDictionary class]]) {
+        for (NSString *k in (NSDictionary *)node) {
+            id v = [(NSDictionary *)node objectForKey:k];
+            if ([v isKindOfClass:[NSString class]]) {
+                if ([keys count] < 40) [keys addObject:k];
+                NSString *sv = (NSString *)v;
+                /* Device tokens and JWTs are both long and unbroken. */
+                if ([sv length] >= 20 && [sv length] <= 800 &&
+                    [sv rangeOfString:@" "].location == NSNotFound &&
+                    ![out containsObject:sv]) {
+                    [out addObject:sv];
+                }
+            } else {
+                if ([keys count] < 40) [keys addObject:k];
+                DTFCollectTokens(v, out, keys);
+            }
+        }
+    } else if ([node isKindOfClass:[NSArray class]]) {
+        for (id v in (NSArray *)node) DTFCollectTokens(v, out, keys);
+    }
+}
+
 + (NSString *)loginWithEmail:(NSString *)email password:(NSString *)password
                        error:(NSString **)error
 {
@@ -267,55 +294,48 @@ static id DTFApiGet(NSString *version, NSString *rest, NSString **error)
 
     id root = [NSJSONSerialization JSONObjectWithData:d options:0 error:NULL];
     NSDictionary *rootDict = DTFDict(root);
+    id msg = [rootDict objectForKey:@"message"];
 
-    /* The payload sits under `result` on success and `data` on errors, and the
-       token field itself has moved between versions — so look through every
-       plausible place rather than betting on one. */
-    NSMutableArray *places = [NSMutableArray array];
-    NSDictionary *fromResult = DTFDict([rootDict objectForKey:@"result"]);
-    NSDictionary *fromData = DTFDict([rootDict objectForKey:@"data"]);
-    if (fromResult != nil) [places addObject:fromResult];
-    if (fromData != nil) [places addObject:fromData];
-    if (rootDict != nil) [places addObject:rootDict];
-
-    NSArray *keys = [NSArray arrayWithObjects:@"token", @"accessToken",
-                     @"access_token", @"jwt", @"deviceToken", nil];
     NSMutableArray *candidates = [NSMutableArray array];
-    for (NSDictionary *place in places) {
-        for (NSString *k in keys) {
-            NSString *t = DTFStr([place objectForKey:k]);
-            if ([t length] > 10 && ![candidates containsObject:t]) [candidates addObject:t];
-        }
-    }
-    /* Each check is a network round trip, so only the plausible ones are tried. */
+    NSMutableArray *keys = [NSMutableArray array];
+    DTFCollectTokens(root, candidates, keys);
+
+    /* Longest first: a real token is longer than a nickname or a URL slug. */
+    [candidates sortUsingComparator:^NSComparisonResult(NSString *a, NSString *b) {
+        if ([a length] > [b length]) return NSOrderedAscending;
+        if ([a length] < [b length]) return NSOrderedDescending;
+        return NSOrderedSame;
+    }];
+
+    NSUInteger tried = 0;
     for (NSString *t in candidates) {
+        if (tried >= 4) break;      /* each check is a network round trip */
+        tried++;
         if ([self validateToken:t]) return t;
     }
 
-    NSDictionary *result = fromResult != nil ? fromResult : fromData;
-
     if (error) {
-        int status = loginStatus;
-        id msg = [rootDict objectForKey:@"message"];
-        if ([msg isKindOfClass:[NSString class]] && [msg length] > 0) {
-            /* Surface the server's own words — "Too many calls" is common here
-               and means waiting, not wrong credentials. */
-            if ([msg isEqualToString:@"Too many calls"]) {
-                *error = @"Сервер просит подождать: слишком часто. "
-                          "Попробуй через минуту или войди по токену.";
-            } else if ([msg rangeOfString:@"Invalid login"].location != NSNotFound) {
-                *error = @"Почта или пароль не подошли";
-            } else {
-                *error = [NSString stringWithFormat:@"%@ (HTTP %d)", msg, status];
-            }
-        } else if (result != nil) {
-            *error = @"Сервер принял вход, но не отдал токен — войди по токену ниже.";
-        } else if (rootDict == nil) {
+        NSString *where = [keys count] > 0
+            ? [NSString stringWithFormat:@"\nПоля ответа: %@",
+               [[keys subarrayWithRange:NSMakeRange(0,
+                    [keys count] < 12 ? [keys count] : 12)] componentsJoinedByString:@", "]]
+            : @"";
+        if ([msg isKindOfClass:[NSString class]] &&
+            [msg rangeOfString:@"Invalid login"].location != NSNotFound) {
+            *error = @"Почта или пароль не подошли";
+        } else if ([msg isKindOfClass:[NSString class]] &&
+                   [msg isEqualToString:@"Too many calls"]) {
+            *error = @"Сервер просит подождать: слишком часто. Попробуй через минуту.";
+        } else if ([candidates count] == 0) {
             *error = [NSString stringWithFormat:
-                @"Ответ не разобрался (HTTP %d). Попробуй вход по токену.", status];
+                @"Сервер ответил «%@» (HTTP %d), но токена в ответе нет.%@",
+                [msg isKindOfClass:[NSString class]] ? msg : @"?", loginStatus, where];
         } else {
             *error = [NSString stringWithFormat:
-                @"Не удалось войти (HTTP %d)", status];
+                @"Сервер ответил «%@» (HTTP %d). Нашёл %d подходящих значений, "
+                 "но ни одно не открыло доступ.%@",
+                [msg isKindOfClass:[NSString class]] ? msg : @"?", loginStatus,
+                (int)[candidates count], where];
         }
     }
     return nil;

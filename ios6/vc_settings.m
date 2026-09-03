@@ -11,19 +11,18 @@
 @property (nonatomic, retain) UIScrollView *scroll;
 @property (nonatomic, retain) UITextField *emailField;
 @property (nonatomic, retain) UITextField *passwordField;
-@property (nonatomic, retain) UITextView *tokenField;
 @property (nonatomic, retain) UILabel *statusLabel;
 @property (nonatomic, retain) UIActivityIndicatorView *spinner;
 @property (nonatomic, retain) UIButton *goButton;
 @end
 
 @implementation LoginViewController
-@synthesize scroll, emailField, passwordField, tokenField, statusLabel, spinner, goButton;
+@synthesize scroll, emailField, passwordField, statusLabel, spinner, goButton;
 
 - (void)dealloc
 {
     [scroll release]; [emailField release]; [passwordField release];
-    [tokenField release]; [statusLabel release]; [spinner release];
+    [statusLabel release]; [spinner release];
     [goButton release];
     [super dealloc];
 }
@@ -60,7 +59,7 @@
 - (void)viewDidLoad
 {
     [super viewDidLoad];
-    self.title = @"Вход 1.0";
+    self.title = @"Вход 1.1";
     self.view.backgroundColor = DTFPaper();
 
     /* Everything lives in a scroll view: on a 3.5-inch screen with a tab bar
@@ -103,32 +102,7 @@
     self.goButton.autoresizingMask = UIViewAutoresizingFlexibleWidth;
     [self.scroll addSubview:self.goButton];
 
-    [self captionAt:240.0f text:@"ИЛИ ТОКЕН"];
-    UILabel *hint = [[[UILabel alloc] initWithFrame:
-        CGRectMake(16.0f, 260.0f, w - 32.0f, 46.0f)] autorelease];
-    hint.text = @"На сайте: Профиль → Настройки → внизу «Инструменты для разработчика».";
-    hint.numberOfLines = 3;
-    hint.font = [UIFont systemFontOfSize:12.0f];
-    hint.textColor = [UIColor grayColor];
-    hint.autoresizingMask = UIViewAutoresizingFlexibleWidth;
-    DTFLetterpress(hint);
-    [self.scroll addSubview:hint];
-
-    self.tokenField = [[[UITextView alloc] initWithFrame:
-        CGRectMake(14.0f, 308.0f, w - 28.0f, 58.0f)] autorelease];
-    self.tokenField.font = [UIFont systemFontOfSize:11.0f];
-    self.tokenField.layer.borderColor = [[UIColor colorWithWhite:0.7f alpha:1.0f] CGColor];
-    self.tokenField.layer.borderWidth = 1.0f;
-    self.tokenField.layer.cornerRadius = 6.0f;
-    self.tokenField.autoresizingMask = UIViewAutoresizingFlexibleWidth;
-    [self.scroll addSubview:self.tokenField];
-
-    UIButton *useToken = DTFButton(@"Войти по токену", self, @selector(loginWithToken));
-    useToken.frame = CGRectMake(14.0f, 374.0f, w - 28.0f, 40.0f);
-    useToken.autoresizingMask = UIViewAutoresizingFlexibleWidth;
-    [self.scroll addSubview:useToken];
-
-    self.scroll.contentSize = CGSizeMake(w, 430.0f);
+    self.scroll.contentSize = CGSizeMake(w, 250.0f);
 }
 
 - (BOOL)textFieldShouldReturn:(UITextField *)tf { [tf resignFirstResponder]; return YES; }
@@ -192,22 +166,6 @@
         dispatch_async(dispatch_get_main_queue(), ^{
             [self finishOk:[token length] > 0
                    message:err ? err : @"Сервер не принял почту и пароль"];
-        });
-    });
-}
-
-- (void)loginWithToken
-{
-    NSString *t = [self.tokenField.text stringByTrimmingCharactersInSet:
-        [NSCharacterSet whitespaceAndNewlineCharacterSet]];
-    if ([t length] < 10) { [self finishOk:NO message:@"Вставь токен"]; return; }
-    [self.tokenField resignFirstResponder];
-    [self startWork:@"Проверяю токен…"];
-
-    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
-        BOOL ok = [DTFApi validateToken:t];
-        dispatch_async(dispatch_get_main_queue(), ^{
-            [self finishOk:ok message:@"Токен не подошёл"];
         });
     });
 }
@@ -291,7 +249,7 @@ static NSString *const kImagesOn = @"dtf_images_on";
         cell.textLabel.text = @"Очистить кэш картинок";
     } else if (ip.row == 0) {
         cell.textLabel.text = @"DTF by Vino для iOS 6";
-        cell.detailTextLabel.text = @"версия 1.0";
+        cell.detailTextLabel.text = @"версия 1.1";
         cell.selectionStyle = UITableViewCellSelectionStyleNone;
     } else {
         cell.textLabel.text = @"Диагностика";
@@ -528,8 +486,13 @@ static NSString *const kImagesOn = @"dtf_images_on";
              "background-size:contain;background-repeat:no-repeat;"
              "background-image:url(\"data:image/png;base64,%@\")}</style>"
              "тег: <img src='data:image/png;base64,%@' width='24' height='24'> &nbsp; "
-             "фон: <i class='t'></i>"
-             "</body></html>", b64, b64];
+             "фон: <i class='t'></i><br>"
+             "как в посте: <span style='background:#e8e8e8;border:1px solid #ccc;"
+             "border-radius:10px;padding:1px 8px;font-size:12px'>"
+             "<img src='data:image/png;base64,%@' width='15' height='15' "
+             "style='width:15px;height:15px;display:inline;vertical-align:-2px;"
+             "margin:0 3px 0 0;border:0'>42</span>"
+             "</body></html>", b64, b64, b64];
         dispatch_async(dispatch_get_main_queue(), ^{
             [self.probe loadHTMLString:html baseURL:nil];
         });
